@@ -18,35 +18,110 @@ function _has(t,v)
  return false
 end
 
--- string-packed data
--- jobs: name,hp,atk,def,spd,req_job,req_lv
-_j=pd("sqr,10,3,2,3,0,0|knt,14,5,4,2,1,1|mag,8,6,1,4,1,1|prt,9,2,3,4,1,1")
--- skills: name,job_id,type,power,range,cd
-_s=pd("slash,1,a,3,1,0|block,1,b,3,0,2|fire,3,a,5,2,2|heal,4,h,4,2,1|cleave,2,a,4,1,1|smite,4,a,3,3,2")
--- relics: name,stat_key,bonus
-_r=pd("spd+,s,1|def+,d,2|atk+,a,2|hp+,h,3|haste,s,2|armor,d,1")
+-- v2 data tables
+-- jobs: name,hp,atk,def,spd,pos,tier,parent
+-- pos:0=front,1=mid,2=back tier:1/2 parent:0=base
+_j=pd("sqr,12,4,3,3,0,1,0|sct,8,3,1,6,2,1,0|aco,9,2,2,4,2,1,0|apr,7,5,1,4,2,1,0|brl,15,3,2,3,0,1,0|lnc,10,4,2,4,1,1,0|knt,16,4,5,2,0,2,1|sam,11,6,2,4,0,2,1|rng,9,5,1,5,2,2,2|thf,8,4,1,7,2,2,2|pst,10,3,3,3,2,2,3|orc,9,2,2,5,2,2,3|blm,7,7,1,3,2,2,4|tmg,8,4,1,5,2,2,4|mnk,16,4,3,4,0,2,5|zrk,14,5,1,3,0,2,5|drg,11,6,2,3,1,2,6|vlk,10,4,3,4,1,2,6")
+-- skills: name,jid,type,pw,rng,cd,xtra,dur
+-- type:a=atk A=aoe h=heal H=aoeh b=buf1
+-- B=bufA d=deb1 D=debA p=prc l=lfs c=ctr
+-- pw: x10 mult(atk/heal) or %/flat(buf)
+_s=pd("slash,1,a,10,1,0,0,0|guard,1,b,50,0,3,d,2|rally,1,B,1,0,4,s,3|shot,2,a,10,3,0,0,0|dash,2,b,3,0,2,s,2|mark,2,d,50,3,3,m,2|mend,3,h,15,3,1,0,0|bless,3,b,30,3,3,a,3|light,3,a,8,2,0,0,0|fire,4,a,12,3,1,0,0|spark,4,a,7,3,2,0,0|barrir,4,b,15,0,4,h,2|pummel,5,a,10,1,0,0,0|endure,5,h,25,0,3,0,0|roar,5,D,20,0,4,a,2|thrust,6,a,10,2,0,0,0|leap,6,a,13,3,3,0,0|inspre,6,b,20,1,3,a,2|shdwal,7,b,50,1,3,d,2|taunt,7,D,0,0,4,t,2|fortre,7,b,100,0,5,d,3|iaistk,8,a,20,1,3,0,0|blddnc,8,A,7,1,3,0,0|focus,8,b,200,0,4,a,1|volley,9,A,6,3,3,0,0|snipe,9,p,25,3,4,0,0|trap,9,a,15,2,3,w,3|poison,10,d,3,2,2,p,4|steal,10,d,0,1,4,0,0|ambush,10,p,20,1,3,0,0|healal,11,H,10,0,4,0,0|revive,11,h,30,3,6,r,0|holy,11,a,15,3,3,k,0|haste,12,b,3,3,3,s,3|shell,12,b,20,3,3,h,1|forsit,12,B,30,0,5,d,2|firaga,13,A,10,3,4,0,0|thundr,13,a,15,3,3,0,0|drain,13,l,10,2,3,0,0|slow,14,d,3,3,3,s,3|quick,14,b,0,3,3,q,0|comet,14,a,20,3,5,0,0|countr,15,c,100,0,2,0,1|chiwav,15,H,10,0,4,0,0|irnfst,15,p,15,1,2,0,0|frenzy,16,b,2,0,3,a,0|drnstk,16,l,12,1,2,0,0|rampag,16,A,8,1,4,0,0|jump,17,a,20,3,4,j,0|lncchr,17,p,12,2,2,0,0|rend,17,a,10,2,2,d,3|warcry,18,B,30,0,4,a,2|shlbsh,18,a,10,1,2,n,0|aegis,18,b,50,1,3,d,2")
+-- accessories: name,stat,bonus,special
+_a=pd("pwr glv,a,3,0|irn shd,d,3,0|sprint,s,2,0|hp bngl,h,5,0|ctr rng,0,0,c|heal rd,0,0,h|fcs bnd,0,0,f|wrd chm,0,0,w|hst bch,0,0,b|vmp fng,0,0,v|mag rng,0,0,m|lck chm,0,0,l")
+-- potions: name,effect,power,cost
+_p=pd("potion,h,50,30|hi-pot,h,100,60|ether,e,0,50|haste,s,100,40|bomb,d,8,45|smoke,n,0,55|phoenx,r,25,75|shield,t,50,40")
 -- enemies: name,spr,hp,atk,spd,behavior,def
-_e=pd("slime,5,12,5,2,0,2|gobln,6,14,6,3,0,2|wolf,7,11,6,5,1,2|ogre,8,24,8,2,0,4|dragn,9,30,9,3,2,4")
-jn=split("squire,knight,mage,priest")
+_e=pd("slime,5,10,4,2,0,2|goblin,6,12,5,3,0,2|wolf,7,9,5,6,1,1|archer,32,8,4,4,2,1|mage,33,7,6,3,3,1|golem,34,18,3,1,5,5|bandit,35,10,5,5,4,2|bat,36,5,3,7,5,0|orc,37,16,6,2,0,3|snake,38,8,4,5,6,1|champ,39,22,7,3,7,4|assassn,40,14,8,6,1,1|shaman,41,16,5,4,8,2|ogre,42,28,8,2,0,3|drake,43,20,7,3,3,4")
+-- bosses: name,spr,hp,atk,spd,behavior,def,mechanic
+_b=pd("warlrd,44,35,7,3,0,4,s|hydra,45,50,8,4,0,3,m|lich,46,60,10,3,3,5,c")
+-- name pool + display names
+_nm=split("aria,kael,lira,voss,rhen,dahl,mira,thane")
+jn=split("squire,scout,acolyte,apprntc,brawler,lancer,knight,samurai,ranger,thief,priest,oracle,blk mag,time mg,monk,brsrkr,dragoon,valkyri")
 
 function _init()
  gs="title"
  t=0
  py={}
- for i=1,3 do add(py,mku(1)) end
+ gold=0
+ pots={}
  rls={}
  fl=1
  mxfl=3
+ -- draft: pick 3 base classes
+ -- (full draft screen is W4.1, for now random)
+ local pool={1,2,3,4,5,6}
+ for i=1,3 do
+  local idx=1+flr(rnd(#pool))
+  add(py,mku(pool[idx]))
+  deli(pool,idx)
+ end
  genmap()
 end
 
+-- v2 unit: named, with tier + kept skill
 function mku(ji)
  local j=_j[ji]
- return{ji=ji,hp=n(j[2]),mhp=n(j[2]),
+ local nm=_nm[1+flr(rnd(#_nm))]
+ return{ji=ji,nm=nm,
+  hp=n(j[2]),mhp=n(j[2]),
   atk=n(j[3]),def=n(j[4]),spd=n(j[5]),
-  x=0,y=0,atb=0,jp=0,jlv=1,
-  cd={0,0},alive=true,tm=1,
-  bv=0,bd=0}
+  tier=1,base=ji,kept=nil,acc=nil,
+  x=0,y=0,atb=0,
+  cd={0,0,0},alive=true,tm=1,
+  buffs={},debuffs={}}
+end
+
+-- advance unit to tier 2
+-- branch: index into _j (7-18)
+-- kidx: which current skill to keep (1-3)
+function advu(u,branch,kidx)
+ local j=_j[branch]
+ if n(j[7])!=2 then return end
+ -- save kept skill
+ local sks=getsk(u.ji)
+ if kidx>=1 and kidx<=#sks then
+  u.kept=sks[kidx]
+ end
+ u.ji=branch
+ u.tier=2
+ u.hp=n(j[2])
+ u.mhp=n(j[2])
+ u.atk=n(j[3])
+ u.def=n(j[4])
+ u.spd=n(j[5])
+ u.cd={0,0,0,0}
+end
+
+-- get skills for a job id
+function getsk(ji)
+ local r={}
+ for s in all(_s) do
+  if n(s[2])==ji then add(r,s) end
+ end
+ return r
+end
+
+-- get active skills for unit
+-- (kept skill + current class skills)
+function ugetsk(u)
+ local r={}
+ if u.kept then add(r,u.kept) end
+ for s in all(getsk(u.ji)) do
+  add(r,s)
+ end
+ return r
+end
+
+-- get advancement options for a base class
+function advopt(ji)
+ local r={}
+ for i=1,#_j do
+  if n(_j[i][7])==2 and n(_j[i][8])==ji then
+   add(r,i)
+  end
+ end
+ return r
 end
 
 function mke(ei,x,y)
@@ -56,7 +131,8 @@ function mke(ei,x,y)
   atk=n(e[4]),spd=n(e[5]),
   bf=n(e[6]),def=n(e[7]),
   x=x,y=y,atb=0,alive=true,tm=2,
-  ji=0,cd={0,0}}
+  ji=0,cd={0,0,0},
+  buffs={},debuffs={}}
 end
 
 -- map gen
@@ -130,7 +206,9 @@ function init_setup()
   u.x=flr(rnd(2))
   u.y=i-1
   u.atb=0
-  u.cd={0,0}
+  u.cd={0,0,0,0}
+  u.buffs={}
+  u.debuffs={}
   if u.hp>0 then u.alive=true end
  end
  cur={x=0,y=0}
@@ -139,17 +217,43 @@ end
 
 function init_combat()
  ens={}
- local df=fl
- if cnod.tp==2 then df+=2 end
- if cnod.tp==4 then df+=3 end
- local ne=min(2+flr(df*0.7),4)
- for i=1,ne do
-  local ei=min(1+flr(rnd(df)),#_e)
-  local e=mke(ei,4+flr(rnd(2)),i-1)
-  e.hp=flr(e.hp*(1+fl*0.2))
-  e.mhp=e.hp
-  e.atk=flr(e.atk*(1+fl*0.1))
+ local ne,pool
+ if cnod.tp==4 then
+  -- boss: use _b table
+  local bi=min(fl,#_b)
+  local b=_b[bi]
+  local e=mke(1,4,1) -- placeholder
+  e.nm=b[1] e.spr=n(b[2])
+  e.hp=n(b[3]) e.mhp=e.hp
+  e.atk=n(b[4]) e.spd=n(b[5])
+  e.def=n(b[7])
   add(ens,e)
+  -- boss adds
+  ne=1+flr(rnd(2))
+  for i=1,ne do
+   local ei=min(1+flr(rnd(5)),10)
+   add(ens,mke(ei,4+flr(rnd(2)),i))
+  end
+ elseif cnod.tp==2 then
+  -- elite: pick from elite pool (11-15)
+  ne=1+flr(rnd(2))
+  for i=1,ne do
+   local ei=11+flr(rnd(5))
+   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
+   add(ens,e)
+  end
+ else
+  -- regular: pick from 1-10
+  ne=min(2+flr(fl*0.7),4)
+  for i=1,ne do
+   local ei=1+flr(rnd(min(3+fl*2,10)))
+   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
+   -- floor scaling
+   e.hp=flr(e.hp*(0.7+fl*0.3))
+   e.mhp=e.hp
+   e.atk=flr(e.atk*(0.8+fl*0.2))
+   add(ens,e)
+  end
  end
  gs="combat"
  cmsg=""
@@ -180,23 +284,31 @@ function uptp()
  end
 end
 
--- relic bonus
-function rlb(stat)
- local b=0
- local k=sub(stat,1,1)
- for r in all(rls) do
-  if r[2]==k then b+=n(r[3]) end
+-- accessory stat bonus for unit
+function accb(u,stat)
+ if not u.acc then return 0 end
+ local a=_a[u.acc]
+ if a[2]==sub(stat,1,1) then
+  return n(a[3])
  end
- return b
+ return 0
+end
+
+-- v2 damage calc: pw is x10 mult
+function calcdmg(u,pw,tgt,pierce)
+ local ab=accb(u,"atk")
+ local d=flr(n(pw)*u.atk/10)+ab
+ if not pierce then
+  d=d-tgt.def
+ end
+ d+=flr(rnd(3))-1
+ return max(1,d)
 end
 
 -- combat ai
 function doact(u)
- -- expire buff
- if u.bd and u.bd>0 then
-  u.bd-=1
-  if u.bd==0 then u.def-=u.bv u.bv=0 end
- end
+ -- tick buffs/debuffs
+ tickbd(u)
  local fr,fo={},{}
  for o in all(py) do
   if o.alive then
@@ -210,30 +322,41 @@ function doact(u)
  end
  if #fo==0 then return end
 
- -- get skills
- local sks={}
- if u.ji>0 then
-  for s in all(_s) do
-   if n(s[2])==u.ji then add(sks,s) end
+ -- get skills (v2: unit skills)
+ local sks
+ if u.tm==1 then sks=ugetsk(u)
+ else
+  sks={}
+  if u.ji>0 then
+   for s in all(_s) do
+    if n(s[2])==u.ji then add(sks,s) end
+   end
   end
  end
 
  -- heal check
  for i,s in pairs(sks) do
-  if s[3]=="h" and u.cd[min(i,2)]==0 then
+  if (s[3]=="h" or s[3]=="H") and u.cd[min(i,#u.cd)]==0 then
    local tgt=nil
    for f in all(fr) do
     if f.hp<f.mhp*0.5 then
      if not tgt or f.hp<tgt.hp then tgt=f end
     end
    end
-   if tgt then
-    local pw=n(s[4])+rlb("atk")
-    tgt.hp=min(tgt.mhp,tgt.hp+pw)
-    cmsg="heal +"..pw
+   if tgt or s[3]=="H" then
+    local pw=flr(n(s[4])*u.atk/10)
+    if s[3]=="H" then
+     for f in all(fr) do
+      f.hp=min(f.mhp,f.hp+pw)
+     end
+     cmsg=s[1].." +"..pw
+    else
+     tgt.hp=min(tgt.mhp,tgt.hp+pw)
+     cmsg=s[1].." +"..pw
+     addp(tgt.x,tgt.y,11)
+    end
     cmt=25
-    u.cd[min(i,2)]=n(s[6])
-    addp(tgt.x,tgt.y,11)
+    u.cd[min(i,#u.cd)]=n(s[6])
     sfx(1)
     return
    end
@@ -241,7 +364,6 @@ function doact(u)
  end
 
  -- find target (behavior-aware)
- -- front-row blocking: bhv 0 enemies must hit frontmost player
  local tgt,bd=nil,999
  local bf=u.bf or 0
  local pool=fo
@@ -267,17 +389,17 @@ function doact(u)
  end
  if tgt then bd=abs(tgt.x-u.x)+abs(tgt.y-u.y) end
 
- -- buff check (block/shield)
+ -- buff check
  for i,s in pairs(sks) do
-  if s[3]=="b" and u.cd[min(i,2)]==0 then
-   if bd<=2 then
-    if u.bv>0 then u.def-=u.bv end
-    u.bv=n(s[4])
-    u.bd=2
-    u.def+=u.bv
-    u.cd[min(i,2)]=n(s[6])
-    cmsg=s[1].." +"..s[4].."def"
+  if (s[3]=="b" or s[3]=="B") and u.cd[min(i,#u.cd)]==0 then
+   if bd<=2 or s[5]=="0" then
+    -- simple DEF buff for now
+    local bval=flr(n(s[4])*u.def/100)
+    if s[7]=="s" then bval=n(s[4]) end
+    if s[7]=="a" then bval=flr(n(s[4])*u.atk/100) end
+    cmsg=s[1]
     cmt=20
+    u.cd[min(i,#u.cd)]=n(s[6])
     addp(u.x,u.y,12)
     sfx(2)
     return
@@ -285,23 +407,41 @@ function doact(u)
   end
  end
 
- -- try attack skills
+ -- try attack skills (a, A, p, l)
  for i,s in pairs(sks) do
-  if s[3]=="a" and u.cd[min(i,2)]==0 and bd<=n(s[5]) then
-   local pw=n(s[4])+u.atk+rlb("atk")
-   local dm=max(1,pw-tgt.def+flr(rnd(3))-1)
-   tgt.hp-=dm
-   cmsg=s[1].." -"..dm
-   cmt=25
-   u.cd[min(i,2)]=n(s[6])
-   if tgt.hp<=0 then
-    tgt.alive=false
-    sfx(3)
-   else
+  local tp=s[3]
+  if (tp=="a" or tp=="A" or tp=="p" or tp=="l") and u.cd[min(i,#u.cd)]==0 then
+   if tp=="A" then
+    -- aoe: hit all foes
+    local dm=calcdmg(u,s[4],fo[1],false)
+    for f in all(fo) do
+     f.hp-=dm
+     if f.hp<=0 then f.alive=false end
+     addp(f.x,f.y,8)
+    end
+    cmsg=s[1].." -"..dm.." all"
+    cmt=25
+    u.cd[min(i,#u.cd)]=n(s[6])
     sfx(0)
+    return
+   elseif bd<=n(s[5]) then
+    local dm=calcdmg(u,s[4],tgt,tp=="p")
+    tgt.hp-=dm
+    cmsg=s[1].." -"..dm
+    cmt=25
+    u.cd[min(i,#u.cd)]=n(s[6])
+    if tp=="l" then
+     u.hp=min(u.mhp,u.hp+flr(dm/2))
+    end
+    if tgt.hp<=0 then
+     tgt.alive=false
+     sfx(3)
+    else
+     sfx(0)
+    end
+    addp(tgt.x,tgt.y,8)
+    return
    end
-   addp(tgt.x,tgt.y,8)
-   return
   end
  end
 
@@ -312,7 +452,7 @@ function doact(u)
   elseif tgt.y>u.y then u.y+=1
   elseif tgt.y<u.y then u.y-=1 end
  else
-  local dm=max(1,u.atk+rlb("atk")-tgt.def+flr(rnd(3))-1)
+  local dm=max(1,u.atk+accb(u,"atk")-tgt.def+flr(rnd(3))-1)
   tgt.hp-=dm
   cmsg="atk -"..dm
   cmt=20
@@ -326,29 +466,29 @@ function doact(u)
  end
 end
 
+-- tick buff/debuff durations
+function tickbd(u)
+ -- placeholder: full buff system in W3.1
+end
+
 function cwin()
+ -- gold reward
+ local gr=15+flr(rnd(11))
+ local nd=0
  for u in all(py) do
-  if u.alive then
-   u.jp+=2+fl
-   if u.jp>=u.jlv*5 then
-    u.jlv+=1
-    u.mhp+=2
-    u.hp=min(u.hp+2,u.mhp)
-    u.atk+=1
-    u.def+=1
-   end
-  end
+  if not u.alive then nd+=1 end
  end
+ if nd==0 then gr+=5 end
+ gold+=gr
  if cnod.tp==2 then
-  local ri=1+flr(rnd(#_r))
-  add(rls,_r[ri])
-  cmsg="relic: ".._r[ri][1]
+  -- elite: advancement or accessory
+  cmsg="elite won! +"..gr.."g"
   sfx(5)
  elseif cnod.tp==4 then
-  cmsg="boss defeated!"
+  cmsg="boss defeated! +"..gr.."g"
   sfx(4)
  else
-  cmsg="victory! +jp"
+  cmsg="victory! +"..gr.."g"
   sfx(4)
  end
  gs="reward"
@@ -376,11 +516,11 @@ function upcbt()
 
  for _=1,cspd do
   for u in all(au) do
-   u.atb+=u.spd+rlb("spd")*(u.tm==1 and 1 or 0)
+   u.atb+=u.spd+accb(u,"spd")
    if u.atb>=100 then
     u.atb=-20
     doact(u)
-    for i=1,2 do
+    for i=1,#u.cd do
      if u.cd[i]>0 then u.cd[i]-=1 end
     end
     return
@@ -459,20 +599,8 @@ function upset()
  if btnp(2) then cur.y=max(0,cur.y-1) end
  if btnp(3) then cur.y=min(3,cur.y+1) end
 
- if btnp(4) then
-  local u=py[selu]
-  local nj=u.ji%4+1
-  if nj==1 or u.jlv>=n(_j[nj][7]) then
-    local j=_j[nj]
-    u.ji=nj
-    u.mhp=n(j[2])+u.jlv*2
-    u.hp=min(u.hp,u.mhp)
-    u.atk=n(j[3])+flr(u.jlv*0.5)
-    u.def=n(j[4])+flr(u.jlv*0.5)
-    u.spd=n(j[5])
-    sfx(2)
-  end
- end
+ -- v2: no job switch during setup
+ -- advancement happens at elite nodes
 
  if btnp(5) then
   local occ=false
@@ -503,11 +631,12 @@ function upcamp()
    end
    cmsg="party healed!"
   else
+   -- v2: reforge (swap accessories)
+   -- full UI in W4.4, for now just heal
    for u in all(py) do
-    u.mhp+=1
-    u.hp=min(u.hp+1,u.mhp)
+    u.hp=u.mhp
    end
-   cmsg="party toughened!"
+   cmsg="accessories rearranged!"
   end
   cnod.dn=true
   cmt=30
@@ -531,13 +660,10 @@ function _draw()
   print(cmsg,14,42,7)
   for i,u in pairs(py) do
    if u.alive then
-    print(jn[u.ji].." jp:"..u.jp.."/"..u.jlv*5,14,50+i*8,
-     u.jp>=u.jlv*5 and 11 or 6)
+    print(u.nm.." "..jn[u.ji],14,50+i*8,6)
    end
   end
-  if #rls>0 then
-   print("relics:"..#rls,14,80,10)
-  end
+  print("gold:"..gold,14,80,10)
   if cmt<=0 then
    print("\x97 continue",36,84,6)
   end
@@ -547,7 +673,7 @@ function _draw()
   rect(20,30,108,90,8)
   print("game over",40,40,8)
   print("floor "..fl.."/"..mxfl,40,52,7)
-  print("relics: "..#rls,40,62,10)
+  print("gold: "..gold,40,62,10)
   print("\x97 restart",38,78,6)
  elseif gs=="win" then
   rectfill(16,26,112,100,0)
@@ -556,7 +682,7 @@ function _draw()
   print("the spire",38,46,7)
   print("is conquered!",30,54,7)
   print("floors: "..mxfl,36,68,6)
-  print("relics: "..#rls,36,76,10)
+  print("gold: "..gold,36,76,10)
   print("\x97 new run",38,90,6)
  end
 end
@@ -570,22 +696,21 @@ function dtitle()
  rect(12,18,116,48,6)
  print("spire tactics",24,24,7)
  print("roguelike auto-battler",14,34,5)
- -- party preview
- for i=1,4 do
-  spr(i,16+i*20,60)
-  print(jn[i],12+i*20,70,6)
+ -- class preview (6 base classes)
+ for i=1,6 do
+  spr(i,4+(i-1)*20,60)
+  print(jn[i],1+(i-1)*20,70,6)
  end
  if t%50<35 then
   print("\x97 to begin",36,100,10)
  end
- print("a]change job x]select",6,120,5)
+ print("x] start run",30,120,5)
 end
 
 function dmap()
  rectfill(0,0,127,7,1)
  print("floor "..fl.."/"..mxfl,2,1,7)
- spr(22,72,0)
- print(""..#rls,82,1,10)
+ print("g:"..gold,80,1,10)
 
  -- connections
  for nd in all(nds) do
@@ -639,21 +764,12 @@ function dmap()
  for i,u in pairs(py) do
   local bx=1+(i-1)*43
   spr(u.ji,bx,101)
-  print(jn[u.ji],bx+10,101,7)
-  print("lv"..u.jlv,bx+10,108,6)
+  print(u.nm,bx+10,101,7)
+  print(jn[u.ji],bx+10,108,6)
   local hw=flr(30*u.hp/u.mhp)
   rectfill(bx,117,bx+30,120,5)
   rectfill(bx,117,bx+hw,120,u.hp>u.mhp*0.3 and 11 or 8)
   print(u.hp.."/"..u.mhp,bx,122,7)
- end
- -- relic details
- if #rls>0 then
-  local ry=10
-  for r in all(rls) do
-   print(r[1],100,ry,10)
-   ry+=7
-   if ry>90 then break end
-  end
  end
 end
 
@@ -693,20 +809,19 @@ function dsetup()
  rectfill(0,74,127,127,1)
  rect(0,74,127,127,6)
  spr(u.ji,4,78)
- print(jn[u.ji].." lv"..u.jlv,14,78,7)
+ print(u.nm.." "..jn[u.ji],14,78,7)
  print("hp:"..u.mhp.." atk:"..u.atk.." def:"..u.def.." spd:"..u.spd,4,88,6)
 
  -- skills
  local si=0
- for s in all(_s) do
-  if n(s[2])==u.ji then
-   local tp=s[3]=="a" and "atk" or s[3]=="h" and "heal" or "buf"
-   print(s[1].."("..tp..") pw:"..s[4].." rng:"..s[5],4,98+si*8,12)
-   si+=1
-  end
+ local sks=ugetsk(u)
+ for s in all(sks) do
+  local tp=s[3]
+  print(s[1].."("..tp..") pw:"..s[4].." rng:"..s[5],4,98+si*8,12)
+  si+=1
  end
 
- print("\x96=change job \x97=place",4,118,5)
+ print("\x97=place",4,118,5)
 end
 
 function dcombat()
@@ -765,8 +880,7 @@ function dcombat()
  else
   print("floor "..fl,4,2,6)
  end
- spr(22,100,2)
- print(""..#rls,110,2,10)
+ print("g:"..gold,100,2,10)
 
  -- bottom info
  rectfill(0,84,127,92,1)
@@ -789,10 +903,10 @@ function dcamp()
  print("choose one:",34,38,7)
 
  for i,u in pairs(py) do
-  print(jn[u.ji]..": "..u.hp.."/"..u.mhp,24,48+i*10,6)
+  print(u.nm.." "..jn[u.ji]..": "..u.hp.."/"..u.mhp,24,48+i*10,6)
  end
 
- local opts={"heal all to full","upgrade party (+1hp)"}
+ local opts={"rest (heal all)","reforge (swap acc)"}
  for i=1,2 do
   local c=i==sel and 10 or 6
   print(opts[i],20,82+i*12,c)

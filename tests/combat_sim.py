@@ -62,13 +62,15 @@ class CombatSim:
             random.seed(rng_seed)
 
     def relic_bonus(self, stat_key, team=1):
-        """Sum relic bonuses for a stat. Only applies to player team."""
+        """Sum accessory bonuses for a stat. Only applies to player team."""
         if team != 1:
             return 0
         total = 0
         for r in self.relics:
-            if r["stat_key"] == stat_key[0]:
-                total += r["bonus"]
+            # v2: accessories use "stat" key, v1 used "stat_key"
+            key = r.get("stat_key", r.get("stat", ""))
+            if key == stat_key[0]:
+                total += r.get("bonus", 0)
         return total
 
     def make_player_unit(self, job_id, level=1, x=0, y=0):
@@ -106,15 +108,15 @@ class CombatSim:
     def manhattan(self, a, b):
         return abs(a.x - b.x) + abs(a.y - b.y)
 
-    def calc_damage(self, attacker, defender, power=0):
-        """Damage formula matching Lua: max(1, power + atk + relic - def + rnd(3)-1)
-        
-        Variance: ±1. Simple but effective — creates probabilistic outcomes
-        so positioning, speed, and composition produce win rate differentials
-        rather than binary 100%/0% results.
+    def calc_damage(self, attacker, defender, power=0, pierce=False):
+        """Damage formula matching v2 Lua: max(1, pw*atk/10 + bonus - def ± rnd)
+
+        v2: power is ×10 multiplier (10=1.0×). Damage = floor(pw*atk/10) - def ± 1.
         """
         atk_bonus = self.relic_bonus("atk", attacker.team)
-        base = power + attacker.atk + atk_bonus - defender.def_
+        base = int(power * attacker.atk / 10) + atk_bonus
+        if not pierce:
+            base -= defender.def_
         varied = base + random.randint(-1, 1)
         return max(1, varied)
 
@@ -137,17 +139,22 @@ class CombatSim:
         # 1) Try heal if anyone is low
         for i, sk in enumerate(skills):
             sk_key = sk["name"]
-            if sk["type"] == "h" and unit.cooldowns.get(sk_key, 0) == 0:
+            if sk["type"] in ("h", "H") and unit.cooldowns.get(sk_key, 0) == 0:
                 target = None
                 for f in friends:
                     if f.hp < f.max_hp * 0.5:
                         if target is None or f.hp < target.hp:
                             target = f
-                if target:
-                    power = sk["power"] + self.relic_bonus("atk", unit.team)
-                    target.hp = min(target.max_hp, target.hp + power)
+                if target or sk["type"] == "H":
+                    # v2: heal power = pw * atk / 10
+                    power = int(sk["power"] * unit.atk / 10)
+                    if sk["type"] == "H":
+                        for f in friends:
+                            f.hp = min(f.max_hp, f.hp + power)
+                    elif target:
+                        target.hp = min(target.max_hp, target.hp + power)
                     unit.cooldowns[sk_key] = sk["cd"]
-                    self.log.append(f"{unit.name} heals {target.name} for {power}")
+                    self.log.append(f"{unit.name} heals for {power}")
                     return
 
         # 2) Find target (behavior-aware, matches Lua doact)
@@ -203,13 +210,27 @@ class CombatSim:
                     self.log.append(f"{unit.name} uses {sk['name']} (+{sk['power']} def)")
                     return
 
-        # 4) Try attack skills in range
+        # 4) Try attack skills in range (a, A, p, l)
         for i, sk in enumerate(skills):
             sk_key = sk["name"]
-            if sk["type"] == "a" and unit.cooldowns.get(sk_key, 0) == 0:
-                if nearest_dist <= sk["range"]:
-                    dmg = self.calc_damage(unit, nearest, sk["power"])
+            tp = sk["type"]
+            if tp in ("a", "A", "p", "l") and unit.cooldowns.get(sk_key, 0) == 0:
+                if tp == "A":
+                    # AoE: hit all foes
+                    dmg = self.calc_damage(unit, foes[0], sk["power"])
+                    for f in foes:
+                        f.hp -= dmg
+                        if f.hp <= 0:
+                            f.alive = False
+                    unit.cooldowns[sk_key] = sk["cd"]
+                    self.log.append(f"{unit.name} uses {sk['name']} AoE for {dmg}")
+                    return
+                elif nearest_dist <= sk["range"]:
+                    pierce = (tp == "p")
+                    dmg = self.calc_damage(unit, nearest, sk["power"], pierce=pierce)
                     nearest.hp -= dmg
+                    if tp == "l":
+                        unit.hp = min(unit.max_hp, unit.hp + dmg // 2)
                     if nearest.hp <= 0:
                         nearest.alive = False
                     unit.cooldowns[sk_key] = sk["cd"]
@@ -232,8 +253,8 @@ class CombatSim:
                 unit.y -= 1
             self.log.append(f"{unit.name} moves to ({unit.x},{unit.y})")
         else:
-            # Basic attack
-            dmg = self.calc_damage(unit, nearest)
+            # Basic attack (pw=10 = 1x atk multiplier)
+            dmg = self.calc_damage(unit, nearest, power=10)
             nearest.hp -= dmg
             if nearest.hp <= 0:
                 nearest.alive = False

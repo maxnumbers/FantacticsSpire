@@ -28,19 +28,27 @@ class P8Cart:
         self.sfx_raw = self.sections.get("sfx", "")
         self.music_raw = self.sections.get("music", "")
 
-        # Parsed data
+        # Parsed data — v2 format
         self.jobs = self._parse_packed_table("_j", [
-            "name", "hp", "atk", "def_", "spd", "req_job", "req_lv"
+            "name", "hp", "atk", "def_", "spd", "pos", "tier", "parent"
         ])
         self.skills = self._parse_packed_table("_s", [
-            "name", "job_id", "type", "power", "range", "cd"
+            "name", "job_id", "type", "power", "range", "cd", "xtra", "dur"
         ])
-        self.relics = self._parse_packed_table("_r", [
-            "name", "stat_key", "bonus"
+        self.accessories = self._parse_packed_table("_a", [
+            "name", "stat", "bonus", "special"
+        ])
+        self.potions = self._parse_packed_table("_p", [
+            "name", "effect", "power", "cost"
         ])
         self.enemies = self._parse_packed_table("_e", [
             "name", "spr", "hp", "atk", "spd", "behavior", "def_"
         ])
+        self.bosses = self._parse_packed_table("_b", [
+            "name", "spr", "hp", "atk", "spd", "behavior", "def_", "mechanic"
+        ])
+        # Legacy alias
+        self.relics = self.accessories
         self.sprites = self._parse_sprites()
         self.sprite_flags = self._parse_sprite_flags()
 
