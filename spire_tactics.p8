@@ -40,6 +40,7 @@ _nm=split("aria,kael,lira,voss,rhen,dahl,mira,thane")
 jn=split("squire,scout,acolyte,apprntc,brawler,lancer,knight,samurai,ranger,thief,priest,oracle,blk mag,time mg,monk,brsrkr,dragoon,valkyri")
 
 function _init()
+ cartdata("spiretactics")
  gs="title"
  t=0
  py={}
@@ -48,6 +49,19 @@ function _init()
  rls={}
  fl=1
  mxfl=3
+end
+
+-- discovery: bit n = class n discovered
+function disc(ji)
+ -- mark class as discovered
+ local v=dget(0)
+ v=bor(v,shl(1,ji-1))
+ dset(0,v)
+end
+
+function isdisc(ji)
+ -- check if class discovered
+ return band(dget(0),shl(1,ji-1))!=0
 end
 
 function init_draft()
@@ -69,6 +83,7 @@ function updraft()
   if not _has(dpick,ji) then
    add(dpick,ji)
    add(py,mku(ji))
+   disc(ji)
    sfx(1)
    if #dpick>=3 then
     genmap()
@@ -110,6 +125,7 @@ function advu(u,branch,kidx)
  u.def=n(j[4])
  u.spd=n(j[5])
  u.cd={0,0,0,0}
+ disc(branch)
 end
 
 -- get skills for a job id
@@ -1018,6 +1034,8 @@ function _update60()
   upshop()
  elseif gs=="shasgn" then
   upshasgn()
+ elseif gs=="skview" then
+  upskview()
  elseif gs=="gover" then
   if btnp(5) then _init() end
  elseif gs=="win" then
@@ -1056,9 +1074,7 @@ function upset()
  if btnp(1) then cur.x=min(2,cur.x+1) end
  if btnp(2) then cur.y=max(0,cur.y-1) end
  if btnp(3) then cur.y=min(3,cur.y+1) end
-
- -- v2: no job switch during setup
- -- advancement happens at elite nodes
+ if btnp(4) then init_skview("setup") return end
 
  if btnp(5) then
   local occ=false
@@ -1085,6 +1101,7 @@ function upcamp()
   upforge()
   return
  end
+ if btnp(4) then init_skview("camp") return end
  if btnp(2) then sel=max(1,sel-1) sfx(2) end
  if btnp(3) then sel=min(2,sel+1) sfx(2) end
  if btnp(5) then
@@ -1236,6 +1253,99 @@ function upshasgn()
  end
 end
 
+-- skill viewer
+function init_skview(retgs)
+ skret=retgs
+ gs="skview"
+ skunit=1
+ skscr=0
+end
+
+function upskview()
+ if btnp(0) then skunit=max(1,skunit-1) skscr=0 sfx(2) end
+ if btnp(1) then skunit=min(3,skunit+1) skscr=0 sfx(2) end
+ if btnp(2) then skscr=max(0,skscr-1) sfx(2) end
+ if btnp(3) then skscr+=1 sfx(2) end
+ if btnp(4) or btnp(5) then
+  gs=skret
+  sfx(2)
+ end
+end
+
+function dskview()
+ cls(0)
+ rectfill(0,0,127,9,1)
+ print("skill viewer",28,2,7)
+
+ -- unit tabs
+ for i,u in pairs(py) do
+  local bx=2+(i-1)*42
+  local c=i==skunit and 10 or 6
+  rectfill(bx,12,bx+38,22,0)
+  rect(bx,12,bx+38,22,c)
+  spr(u.ji,bx+2,14)
+  print(u.nm,bx+12,14,c)
+ end
+
+ local u=py[skunit]
+ local y=26
+ -- class info
+ print(u.nm.." - "..jn[u.ji],4,y,7)
+ y+=8
+ if u.tier==2 then
+  print("tier 2 (from "..jn[u.base]..")",4,y,5)
+ else
+  print("tier 1 (base)",4,y,5)
+ end
+ y+=8
+ print("hp:"..u.mhp.." at:"..u.atk
+  .." df:"..u.def.." sp:"..u.spd,4,y,6)
+ y+=10
+
+ -- accessory
+ if u.acc then
+  print("acc: ".._a[u.acc][1],4,y,10)
+ else
+  print("acc: none",4,y,5)
+ end
+ y+=10
+
+ -- skills
+ print("skills:",4,y,7) y+=8
+ local sks=ugetsk(u)
+ local si=skscr
+ for i,s in pairs(sks) do
+  if i>si then
+   local ji=n(s[2])
+   local show=true
+   -- tier 2 skill descriptions hidden
+   -- if class not discovered
+   if n(_j[ji][7])==2 and not isdisc(ji) then
+    show=false
+   end
+   if show then
+    print(s[1],8,y,11)
+    local tp=s[3]
+    local tpnm={a="atk",["A"]="aoe",
+     h="heal",["H"]="aoeh",b="buff",
+     ["B"]="buffa",d="debuf",["D"]="deba",
+     p="pierc",l="drain",c="counter"}
+    print((tpnm[tp] or tp).." pw:"
+     ..s[4].." rng:"..s[5].." cd:"..s[6],
+     8,y+7,5)
+   else
+    print("???",8,y,5)
+    print("(undiscovered)",8,y+7,5)
+   end
+   y+=16
+   if y>120 then break end
+  end
+ end
+
+ rectfill(0,120,127,127,1)
+ print("\x8b\x91unit \x8e\x83scroll \x96back",4,122,5)
+end
+
 -- ===== drawing =====
 function _draw()
  cls(0)
@@ -1249,6 +1359,7 @@ function _draw()
  elseif gs=="camp" then dcamp()
  elseif gs=="shop" then dshop()
  elseif gs=="shasgn" then dshasgn()
+ elseif gs=="skview" then dskview()
  elseif gs=="gover" then
   rectfill(20,30,108,90,0)
   rect(20,30,108,90,8)

@@ -806,3 +806,53 @@ class TestCampfireShop:
         assert body is not None
         assert re.search(r'\.acc\s*=\s*shacc', body), \
             "upshasgn doesn't assign accessory"
+
+
+# ============================================================
+# T25: Skill Viewer + Discovery (W4.6)
+# ============================================================
+
+class TestSkillViewer:
+    def test_init_skview_exists(self, cart):
+        """init_skview() must exist."""
+        body = cart.get_function_body("init_skview")
+        assert body is not None, "init_skview function not found"
+
+    def test_dskview_exists(self, cart):
+        """dskview() must exist for rendering."""
+        body = cart.get_function_body("dskview")
+        assert body is not None, "dskview function not found"
+
+    def test_discovery_functions(self, cart):
+        """disc() and isdisc() must exist for persistence."""
+        disc_body = cart.get_function_body("disc")
+        isdisc_body = cart.get_function_body("isdisc")
+        assert disc_body is not None, "disc function not found"
+        assert isdisc_body is not None, "isdisc function not found"
+
+    def test_discovery_uses_cartdata(self, cart):
+        """Discovery must use cartdata/dget/dset for persistence."""
+        assert cart.lua_contains(r'cartdata\('), \
+            "No cartdata() call found"
+        disc_body = cart.get_function_body("disc")
+        assert re.search(r'dset\(', disc_body), \
+            "disc() doesn't use dset()"
+        isdisc_body = cart.get_function_body("isdisc")
+        assert re.search(r'dget\(', isdisc_body), \
+            "isdisc() doesn't use dget()"
+
+    def test_advancement_discovers_class(self, cart):
+        """advu() must call disc() to mark class discovered."""
+        body = cart.get_function_body("advu")
+        assert body is not None
+        assert re.search(r'disc\(', body), \
+            "advu doesn't call disc() on advancement"
+
+    def test_skview_shows_undiscovered(self, cart):
+        """Skill viewer must hide undiscovered tier-2 skills."""
+        body = cart.get_function_body("dskview")
+        assert body is not None
+        assert re.search(r'isdisc', body), \
+            "dskview doesn't check discovery status"
+        assert re.search(r'\?\?\?', body), \
+            "dskview doesn't show ??? for undiscovered"
