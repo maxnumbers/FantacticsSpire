@@ -48,15 +48,34 @@ function _init()
  rls={}
  fl=1
  mxfl=3
- -- draft: pick 3 base classes
- -- (full draft screen is W4.1, for now random)
+end
+
+function init_draft()
+ gs="draft"
+ py={}
+ -- offer 5 of 6 base classes
  local pool={1,2,3,4,5,6}
- for i=1,3 do
-  local idx=1+flr(rnd(#pool))
-  add(py,mku(pool[idx]))
-  deli(pool,idx)
+ deli(pool,1+flr(rnd(6)))
+ dpool=pool
+ dpick={}
+ sel=1
+end
+
+function updraft()
+ if btnp(0) then sel=max(1,sel-1) sfx(2) end
+ if btnp(1) then sel=min(#dpool,sel+1) sfx(2) end
+ if btnp(5) and sel<=#dpool then
+  local ji=dpool[sel]
+  if not _has(dpick,ji) then
+   add(dpick,ji)
+   add(py,mku(ji))
+   sfx(1)
+   if #dpick>=3 then
+    genmap()
+    gs="map"
+   end
+  end
  end
- genmap()
 end
 
 -- v2 unit: named, with tier + kept skill
@@ -724,10 +743,11 @@ function _update60()
 
  if gs=="title" then
   if btnp(5) then
-   _init()
-   gs="map"
+   init_draft()
    sfx(2)
   end
+ elseif gs=="draft" then
+  updraft()
  elseif gs=="map" then
   upmap()
  elseif gs=="setup" then
@@ -848,6 +868,7 @@ end
 function _draw()
  cls(0)
  if gs=="title" then dtitle()
+ elseif gs=="draft" then ddraft()
  elseif gs=="map" then dmap()
  elseif gs=="setup" then dsetup()
  elseif gs=="combat" then dcombat()
@@ -905,6 +926,70 @@ function dtitle()
   print("\x97 to begin",36,100,10)
  end
  print("x] start run",30,120,5)
+end
+
+function ddraft()
+ cls(0)
+ rectfill(0,0,127,9,1)
+ print("choose your party",16,2,7)
+ print(#dpick.."/3",108,2,10)
+
+ -- role hints
+ local roles={"front","back",
+  "healer","mage","tank","mid"}
+
+ for i=1,#dpool do
+  local ji=dpool[i]
+  local j=_j[ji]
+  local x=2+(i-1)*25
+  local y=14
+  local pkd=_has(dpick,ji)
+  local c=pkd and 5
+   or (i==sel and 10 or 6)
+
+  -- card bg
+  rectfill(x,y,x+23,y+72,0)
+  rect(x,y,x+23,y+72,c)
+
+  -- sprite
+  spr(ji,x+8,y+3)
+  -- name
+  print(jn[ji],x+2,y+13,c)
+  -- role
+  print(roles[ji],x+2,y+20,5)
+  -- stats
+  print("hp"..n(j[2]),x+2,y+30,7)
+  print("at"..n(j[3]),x+2,y+38,8)
+  print("df"..n(j[4]),x+2,y+46,12)
+  print("sp"..n(j[5]),x+2,y+54,11)
+
+  -- picked marker
+  if pkd then
+   rectfill(x+6,y+62,x+17,y+69,0)
+   print("pick",x+4,y+63,11)
+  end
+
+  -- cursor
+  if i==sel and not pkd then
+   if t%30<20 then
+    rect(x-1,y-1,x+24,y+73,10)
+   end
+  end
+ end
+
+ -- picked party preview
+ rectfill(0,90,127,127,1)
+ print("party:",2,92,6)
+ for i,u in pairs(py) do
+  local bx=4+(i-1)*42
+  spr(u.ji,bx,100)
+  print(u.nm,bx+10,100,7)
+  print(jn[u.ji],bx+10,107,6)
+ end
+
+ if #dpick<3 then
+  print("\x8b\x91 browse  \x97 pick",14,120,5)
+ end
 end
 
 function dmap()

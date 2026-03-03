@@ -557,3 +557,47 @@ class TestDataTables:
         """_nm (name pool) should be present in Lua source."""
         assert cart.lua_contains(r'_nm\s*=\s*split\('), \
             "_nm name pool not found in Lua source"
+
+
+# ============================================================
+# T20: Draft Screen
+# ============================================================
+
+class TestDraftScreen:
+    def test_init_draft_exists(self, cart):
+        """init_draft() function must exist."""
+        body = cart.get_function_body("init_draft")
+        assert body is not None, "init_draft function not found"
+
+    def test_draft_offers_five(self, cart):
+        """Draft should offer 5 of 6 base classes."""
+        body = cart.get_function_body("init_draft")
+        assert body is not None
+        # Pool starts with 6 and removes 1
+        assert re.search(r'pool\s*=\s*\{1,2,3,4,5,6\}', body), \
+            "Draft doesn't start with 6-class pool"
+        assert re.search(r'deli\(pool', body), \
+            "Draft doesn't remove a class from pool"
+
+    def test_draft_picks_three(self, cart):
+        """Draft should require exactly 3 picks."""
+        body = cart.get_function_body("updraft")
+        assert body is not None
+        assert re.search(r'dpick\s*>=\s*3', body), \
+            "Draft doesn't check for 3 picks"
+
+    def test_draft_creates_units(self, cart):
+        """Draft must call mku() to create units."""
+        body = cart.get_function_body("updraft")
+        assert body is not None
+        assert re.search(r'mku\(', body), \
+            "Draft doesn't create units via mku()"
+
+    def test_draft_transitions_to_map(self, cart):
+        """After 3 picks, draft should generate map."""
+        body = cart.get_function_body("updraft")
+        assert body is not None
+        assert re.search(r'genmap\(\)', body), \
+            "Draft doesn't call genmap() after picking"
+        assert re.search(r'gs\s*=\s*"map"', body), \
+            "Draft doesn't transition to map state"
