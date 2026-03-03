@@ -667,3 +667,57 @@ class TestSetupScreen:
         assert body is not None
         assert re.search(r'battle.*elite.*campfire.*boss.*shop', body), \
             "dmap doesn't contain node type name list"
+
+
+# ============================================================
+# T22: Reward Screen (W4.3)
+# ============================================================
+
+class TestRewardScreen:
+    def test_upreward_exists(self, cart):
+        """upreward() must exist."""
+        body = cart.get_function_body("upreward")
+        assert body is not None, "upreward function not found"
+
+    def test_dreward_exists(self, cart):
+        """dreward() must exist."""
+        body = cart.get_function_body("dreward")
+        assert body is not None, "dreward function not found"
+
+    def test_cwin_sets_reward_state(self, cart):
+        """cwin() must set gs='reward' and rws for elite."""
+        body = cart.get_function_body("cwin")
+        assert body is not None
+        assert re.search(r'gs\s*=\s*"reward"', body), \
+            "cwin doesn't set game state to reward"
+        assert re.search(r'rws\s*=\s*"elite_pick"', body), \
+            "cwin doesn't set elite pick state"
+
+    def test_elite_reward_has_advance_and_accessory(self, cart):
+        """Elite reward flow must support advancing and accessories."""
+        body = cart.get_function_body("upreward")
+        assert body is not None
+        assert re.search(r'rws\s*==\s*"pick_unit"', body), \
+            "upreward missing pick_unit state"
+        assert re.search(r'rws\s*==\s*"pick_branch"', body), \
+            "upreward missing pick_branch state"
+        assert re.search(r'rws\s*==\s*"pick_skill"', body), \
+            "upreward missing pick_skill state"
+        assert re.search(r'rws\s*==\s*"pick_acc"', body), \
+            "upreward missing pick_acc state"
+
+    def test_reward_calls_advu(self, cart):
+        """Reward advancement must call advu()."""
+        body = cart.get_function_body("upreward")
+        assert body is not None
+        assert re.search(r'advu\(', body), \
+            "upreward doesn't call advu() for advancement"
+
+    def test_potion_drop_on_normal_battle(self, cart):
+        """Normal battles should have potion drop chance."""
+        body = cart.get_function_body("cwin")
+        assert body is not None
+        assert re.search(r'pots', body), \
+            "cwin doesn't reference potion inventory"
+        assert re.search(r'rwdr', body), \
+            "cwin doesn't set potion drop reward"

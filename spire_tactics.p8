@@ -682,19 +682,28 @@ function cwin()
  end
  if nd==0 then gr+=5 end
  gold+=gr
+ gs="reward"
+ cmt=45
+ rws=nil rwdr=nil
+ rwacc={} rwunit=0 rwbr=0 rwski=0
  if cnod.tp==2 then
-  -- elite: advancement or accessory
+  -- elite: choose advance or accessory
   cmsg="elite won! +"..gr.."g"
+  rws="elite_pick"
+  sel=1
   sfx(5)
  elseif cnod.tp==4 then
   cmsg="boss defeated! +"..gr.."g"
   sfx(4)
  else
   cmsg="victory! +"..gr.."g"
+  -- potion drop chance: 30%
+  if rnd(100)<30 and #pots<3 then
+   rwdr=1+flr(rnd(#_p))
+   add(pots,rwdr)
+  end
   sfx(4)
  end
- gs="reward"
- cmt=45
 end
 
 -- update combat
@@ -731,6 +740,119 @@ function upcbt()
  end
 end
 
+-- reward screen
+function upreward()
+ if cmt>0 then cmt-=1 return end
+
+ if not rws then
+  -- normal/boss: just confirm
+  if btnp(5) then
+   cnod.dn=true
+   gs="map"
+   sfx(2)
+  end
+ elseif rws=="elite_pick" then
+  -- choose: 1=advance 2=accessory
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(2,sel+1) sfx(2) end
+  if btnp(5) then
+   if sel==1 then
+    -- find advanceable units (tier 1)
+    rwunits={}
+    for i,u in pairs(py) do
+     if u.alive and u.tier==1 then
+      add(rwunits,i)
+     end
+    end
+    if #rwunits>0 then
+     rws="pick_unit"
+     sel=1
+    else
+     -- no tier-1 units, skip to accessory
+     rws="pick_acc"
+     rwacc={1+flr(rnd(#_a)),
+      1+flr(rnd(#_a))}
+     sel=1
+    end
+   elseif sel==2 then
+    rws="pick_acc"
+    rwacc={1+flr(rnd(#_a)),
+     1+flr(rnd(#_a))}
+    -- ensure different
+    while rwacc[2]==rwacc[1] do
+     rwacc[2]=1+flr(rnd(#_a))
+    end
+    sel=1
+   end
+   sfx(2)
+  end
+ elseif rws=="pick_unit" then
+  -- pick which unit to advance
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(#rwunits,sel+1) sfx(2) end
+  if btnp(5) then
+   rwunit=rwunits[sel]
+   local opts=advopt(py[rwunit].base)
+   if #opts>=2 then
+    rwbranch=opts
+    rws="pick_branch"
+    sel=1
+    sfx(2)
+   end
+  end
+ elseif rws=="pick_branch" then
+  -- pick which branch
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(#rwbranch,sel+1) sfx(2) end
+  if btnp(5) then
+   rwbr=rwbranch[sel]
+   rws="pick_skill"
+   sel=1
+   sfx(2)
+  end
+ elseif rws=="pick_skill" then
+  -- pick skill to keep from old class
+  local sks=getsk(py[rwunit].ji)
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(#sks,sel+1) sfx(2) end
+  if btnp(5) then
+   advu(py[rwunit],rwbr,sel)
+   rws=nil
+   sfx(5)
+  end
+ elseif rws=="pick_acc" then
+  -- pick 1 of 2 accessories
+  if btnp(0) then sel=max(1,sel-1) sfx(2) end
+  if btnp(1) then sel=min(2,sel+1) sfx(2) end
+  if btnp(5) then
+   local ai=rwacc[sel]
+   -- assign to a unit: go to unit pick
+   rwacc_chosen=ai
+   rwunits={}
+   for i,u in pairs(py) do
+    if u.alive then add(rwunits,i) end
+   end
+   rws="assign_acc"
+   sel=1
+   sfx(2)
+  end
+ elseif rws=="assign_acc" then
+  -- assign accessory to a unit
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(#rwunits,sel+1) sfx(2) end
+  if btnp(5) then
+   py[rwunits[sel]].acc=rwacc_chosen
+   rws=nil
+   sfx(5)
+  end
+ end
+
+ -- when reward flow done, confirm exits
+ if not rws and rws!=nil then
+  -- already nil from above
+ end
+end
+
 -- campfire
 function init_camp()
  gs="camp"
@@ -756,12 +878,7 @@ function _update60()
  elseif gs=="combat" then
   upcbt()
  elseif gs=="reward" then
-  if cmt>0 then cmt-=1
-  elseif btnp(5) then
-   cnod.dn=true
-   gs="map"
-   sfx(2)
-  end
+  upreward()
  elseif gs=="camp" then
   upcamp()
  elseif gs=="shop" then
@@ -847,6 +964,7 @@ function upcamp()
   cnod.dn=true
   cmt=30
   gs="reward"
+  rws=nil rwdr=nil
   sfx(1)
  end
 end
@@ -874,20 +992,7 @@ function _draw()
  elseif gs=="setup" then dsetup()
  elseif gs=="combat" then dcombat()
  elseif gs=="reward" then
-  dcombat()
-  rectfill(8,36,120,92,0)
-  rect(8,36,120,92,6)
-  rect(9,37,119,91,1)
-  print(cmsg,14,42,7)
-  for i,u in pairs(py) do
-   if u.alive then
-    print(u.nm.." "..jn[u.ji],14,50+i*8,6)
-   end
-  end
-  print("gold:"..gold,14,80,10)
-  if cmt<=0 then
-   print("\x97 continue",36,84,6)
-  end
+  dreward()
  elseif gs=="camp" then dcamp()
  elseif gs=="shop" then dshop()
  elseif gs=="gover" then
@@ -906,6 +1011,103 @@ function _draw()
   print("floors: "..mxfl,36,68,6)
   print("gold: "..gold,36,76,10)
   print("\x97 new run",38,90,6)
+ end
+end
+
+function dreward()
+ dcombat()
+ rectfill(4,30,124,124,0)
+ rect(4,30,124,124,6)
+
+ print(cmsg,8,33,7)
+ print("gold:"..gold,8,41,10)
+
+ if cmt>0 then return end
+
+ if not rws then
+  -- normal: show drop + confirm
+  if rwdr then
+   print("found: ".._p[rwdr][1],8,53,11)
+  end
+  print("\x97 continue",36,116,6)
+
+ elseif rws=="elite_pick" then
+  print("choose reward:",8,55,7)
+  local c1=sel==1 and 10 or 6
+  local c2=sel==2 and 10 or 6
+  rectfill(10,65,60,85,0)
+  rect(10,65,60,85,c1)
+  print("advance",16,70,c1)
+  print("unit",22,78,5)
+  rectfill(68,65,118,85,0)
+  rect(68,65,118,85,c2)
+  print("pick",82,70,c2)
+  print("accessory",72,78,5)
+
+ elseif rws=="pick_unit" then
+  print("advance which unit?",8,55,7)
+  for i,ui in pairs(rwunits) do
+   local u=py[ui]
+   local c=i==sel and 10 or 6
+   local y=62+(i-1)*14
+   print(u.nm.." "..jn[u.ji],14,y,c)
+   print("hp:"..u.mhp.." at:"..u.atk,14,y+7,5)
+  end
+
+ elseif rws=="pick_branch" then
+  print("pick class branch:",8,55,7)
+  for i,bi in pairs(rwbranch) do
+   local j=_j[bi]
+   local c=i==sel and 10 or 6
+   local y=65+(i-1)*24
+   rectfill(10,y,118,y+20,0)
+   rect(10,y,118,y+20,c)
+   spr(bi,14,y+2)
+   print(jn[bi],26,y+2,c)
+   print("hp:"..n(j[2]).." at:"..n(j[3])
+    .." df:"..n(j[4]).." sp:"..n(j[5]),
+    14,y+12,5)
+  end
+
+ elseif rws=="pick_skill" then
+  print("keep which skill?",8,55,7)
+  local sks=getsk(py[rwunit].ji)
+  for i,s in pairs(sks) do
+   local c=i==sel and 10 or 6
+   local y=65+(i-1)*14
+   print(s[1],14,y,c)
+   print("pw:"..s[4].." rng:"..s[5]
+    .." cd:"..s[6],14,y+7,5)
+  end
+
+ elseif rws=="pick_acc" then
+  print("pick an accessory:",8,55,7)
+  for i,ai in pairs(rwacc) do
+   local a=_a[ai]
+   local c=i==sel and 10 or 6
+   local x=10+(i-1)*58
+   rectfill(x,65,x+52,90,0)
+   rect(x,65,x+52,90,c)
+   print(a[1],x+4,68,c)
+   if a[2]!="0" then
+    print("+"..a[3].." "..a[2],x+4,78,5)
+   else
+    print("special:"..a[4],x+4,78,5)
+   end
+  end
+
+ elseif rws=="assign_acc" then
+  print("give to whom?",8,55,7)
+  print(_a[rwacc_chosen][1],8,63,10)
+  for i,ui in pairs(rwunits) do
+   local u=py[ui]
+   local c=i==sel and 10 or 6
+   local y=72+(i-1)*14
+   print(u.nm.." "..jn[u.ji],14,y,c)
+   local cur_a="none"
+   if u.acc then cur_a=_a[u.acc][1] end
+   print("acc: "..cur_a,14,y+7,5)
+  end
  end
 end
 
