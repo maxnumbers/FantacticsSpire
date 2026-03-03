@@ -759,3 +759,50 @@ class TestPotionSystem:
         assert body is not None
         assert re.search(r'potmenu', body), \
             "dcombat doesn't render potion overlay"
+
+
+# ============================================================
+# T24: Campfire + Shop (W4.4-W4.5)
+# ============================================================
+
+class TestCampfireShop:
+    def test_campfire_reforge_exists(self, cart):
+        """upforge() must exist for accessory swapping."""
+        body = cart.get_function_body("upforge")
+        assert body is not None, "upforge function not found"
+
+    def test_campfire_swaps_accessories(self, cart):
+        """upforge() must swap .acc between units."""
+        body = cart.get_function_body("upforge")
+        assert body is not None
+        assert re.search(r'\.acc', body), \
+            "upforge doesn't reference accessories"
+
+    def test_shop_has_items(self, cart):
+        """init_shop() must generate shop items."""
+        body = cart.get_function_body("init_shop")
+        assert body is not None
+        assert re.search(r'shitm', body), \
+            "init_shop doesn't create shop items"
+        assert re.search(r'tp\s*=\s*"pot"', body), \
+            "Shop doesn't sell potions"
+        assert re.search(r'tp\s*=\s*"acc"', body), \
+            "Shop doesn't sell accessories"
+        assert re.search(r'tp\s*=\s*"heal"', body), \
+            "Shop doesn't offer heal option"
+
+    def test_shop_uses_gold(self, cart):
+        """upshop() must check and deduct gold."""
+        body = cart.get_function_body("upshop")
+        assert body is not None
+        assert re.search(r'gold\s*>=\s*it\.cost', body), \
+            "Shop doesn't check gold before purchase"
+        assert re.search(r'gold\s*-=\s*it\.cost', body), \
+            "Shop doesn't deduct gold on purchase"
+
+    def test_shop_accessory_assignment(self, cart):
+        """upshasgn() must assign accessory to unit."""
+        body = cart.get_function_body("upshasgn")
+        assert body is not None
+        assert re.search(r'\.acc\s*=\s*shacc', body), \
+            "upshasgn doesn't assign accessory"

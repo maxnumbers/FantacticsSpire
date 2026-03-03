@@ -970,6 +970,7 @@ end
 function init_camp()
  gs="camp"
  sel=1
+ campsub=false
 end
 
 -- ===== main loops =====
@@ -996,6 +997,8 @@ function _update60()
   upcamp()
  elseif gs=="shop" then
   upshop()
+ elseif gs=="shasgn" then
+  upshasgn()
  elseif gs=="gover" then
   if btnp(5) then _init() end
  elseif gs=="win" then
@@ -1058,6 +1061,11 @@ function upset()
 end
 
 function upcamp()
+ if campsub then
+  -- reforge sub-menu
+  upforge()
+  return
+ end
  if btnp(2) then sel=max(1,sel-1) sfx(2) end
  if btnp(3) then sel=min(2,sel+1) sfx(2) end
  if btnp(5) then
@@ -1065,34 +1073,147 @@ function upcamp()
    for u in all(py) do
     u.hp=u.mhp
    end
+   cnod.dn=true
+   cmt=30
+   gs="reward"
+   rws=nil rwdr=nil
    cmsg="party healed!"
+   sfx(1)
   else
-   -- v2: reforge (swap accessories)
-   -- full UI in W4.4, for now just heal
-   for u in all(py) do
-    u.hp=u.mhp
-   end
-   cmsg="accessories rearranged!"
+   -- reforge: swap accessories
+   campsub=true
+   frgfrom=0
+   frgto=0
+   sel=1
+   sfx(2)
   end
-  cnod.dn=true
-  cmt=30
-  gs="reward"
-  rws=nil rwdr=nil
-  sfx(1)
+ end
+end
+
+function upforge()
+ if frgfrom==0 then
+  -- pick source unit
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(3,sel+1) sfx(2) end
+  if btnp(5) then
+   frgfrom=sel
+   sel=1
+   sfx(2)
+  end
+  if btnp(4) then
+   campsub=false
+   sel=2
+   sfx(3)
+  end
+ elseif frgto==0 then
+  -- pick target unit
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(3,sel+1) sfx(2) end
+  if btnp(5) and sel!=frgfrom then
+   -- swap accessories
+   local a1=py[frgfrom].acc
+   local a2=py[sel].acc
+   py[frgfrom].acc=a2
+   py[sel].acc=a1
+   cnod.dn=true
+   cmt=30
+   gs="reward"
+   rws=nil rwdr=nil
+   campsub=false
+   cmsg="accessories swapped!"
+   sfx(1)
+  end
+  if btnp(4) then
+   frgfrom=0
+   sel=1
+   sfx(3)
+  end
  end
 end
 
 function init_shop()
  gs="shop"
  sel=1
+ -- generate shop items
+ shitm={}
+ -- 2-4 potions for sale
+ local np=2+flr(rnd(3))
+ for i=1,np do
+  local pi=1+flr(rnd(#_p))
+  add(shitm,{tp="pot",id=pi,
+   cost=n(_p[pi][4])})
+ end
+ -- 2 accessories
+ local a1=1+flr(rnd(#_a))
+ local a2=1+flr(rnd(#_a))
+ while a2==a1 do a2=1+flr(rnd(#_a)) end
+ add(shitm,{tp="acc",id=a1,
+  cost=80+flr(rnd(41))})
+ add(shitm,{tp="acc",id=a2,
+  cost=80+flr(rnd(41))})
+ -- heal all option
+ add(shitm,{tp="heal",id=0,cost=25})
 end
 
 function upshop()
- -- placeholder: press ❎ to leave
+ if btnp(2) then sel=max(1,sel-1) sfx(2) end
+ if btnp(3) then sel=min(#shitm+1,sel+1) sfx(2) end
  if btnp(5) then
+  if sel>#shitm then
+   -- leave shop
+   cnod.dn=true
+   gs="map"
+   sfx(2)
+   return
+  end
+  local it=shitm[sel]
+  if gold>=it.cost then
+   gold-=it.cost
+   if it.tp=="pot" then
+    if #pots<3 then
+     add(pots,it.id)
+     deli(shitm,sel)
+     sfx(1)
+    else sfx(3) end
+   elseif it.tp=="acc" then
+    -- assign to unit flow
+    shacc=it.id
+    shsel=sel
+    gs="shasgn"
+    sel=1
+    sfx(2)
+   elseif it.tp=="heal" then
+    for u in all(py) do
+     u.hp=u.mhp
+    end
+    deli(shitm,sel)
+    sfx(1)
+   end
+  else sfx(3) end
+ end
+ if btnp(4) then
   cnod.dn=true
   gs="map"
   sfx(2)
+ end
+end
+
+function upshasgn()
+ if btnp(2) then sel=max(1,sel-1) sfx(2) end
+ if btnp(3) then sel=min(3,sel+1) sfx(2) end
+ if btnp(5) then
+  py[sel].acc=shacc
+  deli(shitm,shsel)
+  gs="shop"
+  sel=1
+  sfx(1)
+ end
+ if btnp(4) then
+  -- cancel: refund gold
+  gold+=shitm[shsel].cost
+  gs="shop"
+  sel=shsel
+  sfx(3)
  end
 end
 
@@ -1108,6 +1229,7 @@ function _draw()
   dreward()
  elseif gs=="camp" then dcamp()
  elseif gs=="shop" then dshop()
+ elseif gs=="shasgn" then dshasgn()
  elseif gs=="gover" then
   rectfill(20,30,108,90,0)
   rect(20,30,108,90,8)
@@ -1570,30 +1692,104 @@ function dcamp()
  rect(11,11,117,117,4)
  spr(18,52,16)
  print("campfire",40,26,9)
- print("choose one:",34,38,7)
 
- for i,u in pairs(py) do
-  print(u.nm.." "..jn[u.ji]..": "..u.hp.."/"..u.mhp,24,48+i*10,6)
+ if not campsub then
+  print("choose one:",34,38,7)
+  for i,u in pairs(py) do
+   print(u.nm.." "..jn[u.ji]..": "
+    ..u.hp.."/"..u.mhp,24,48+i*10,6)
+  end
+  local opts={"rest (heal all)",
+   "reforge (swap acc)"}
+  for i=1,2 do
+   local c=i==sel and 10 or 6
+   print(opts[i],20,82+i*12,c)
+   if i==sel then print(">",14,82+i*12,10) end
+  end
+  print("\x97 to select",36,116,5)
+ else
+  -- reforge sub-menu
+  if frgfrom==0 then
+   print("swap from:",34,38,7)
+  else
+   print("swap to:",34,38,7)
+  end
+  for i,u in pairs(py) do
+   local c=i==sel and 10 or 6
+   local y=48+i*14
+   spr(u.ji,18,y)
+   print(u.nm,28,y,c)
+   local anm="none"
+   if u.acc then anm=_a[u.acc][1] end
+   print("acc:"..anm,28,y+7,5)
+   if i==sel then print(">",12,y,10) end
+  end
+  print("\x96 cancel  \x97 pick",20,116,5)
  end
-
- local opts={"rest (heal all)","reforge (swap acc)"}
- for i=1,2 do
-  local c=i==sel and 10 or 6
-  print(opts[i],20,82+i*12,c)
-  if i==sel then print(">",14,82+i*12,10) end
- end
-
- print("\x97 to select",36,116,5)
 end
 
 function dshop()
- rectfill(10,10,118,118,0)
- rect(10,10,118,118,10)
- rect(11,11,117,117,4)
- print("shop",48,20,10)
- print("g:"..gold,48,32,10)
- print("(coming soon)",32,56,6)
- print("\x97 leave",44,100,6)
+ rectfill(4,4,124,124,0)
+ rect(4,4,124,124,10)
+ rect(5,5,123,123,4)
+ spr(20,48,8)
+ print("shop",56,10,10)
+ print("gold:"..gold,80,10,10)
+
+ for i,it in pairs(shitm) do
+  local c=i==sel and 10 or 6
+  local y=22+(i-1)*14
+  if it.tp=="pot" then
+   print(_p[it.id][1],12,y,c)
+   print("potion",60,y,5)
+  elseif it.tp=="acc" then
+   print(_a[it.id][1],12,y,c)
+   if _a[it.id][2]!="0" then
+    print("+"..n(_a[it.id][3]).." "
+     .._a[it.id][2],60,y,5)
+   else
+    print("spc:"
+     .._a[it.id][4],60,y,5)
+   end
+  elseif it.tp=="heal" then
+   print("heal all",12,y,c)
+   print("restore hp",60,y,5)
+  end
+  print(it.cost.."g",104,y,
+   gold>=it.cost and 10 or 8)
+  if i==sel then print(">",6,y,10) end
+ end
+
+ -- leave option
+ local ly=22+#shitm*14
+ local c=sel>#shitm and 10 or 6
+ print("leave shop",12,ly,c)
+ if sel>#shitm then print(">",6,ly,10) end
+
+ -- potions carried
+ rectfill(4,108,124,122,1)
+ print("pots:"..#pots.."/3",8,110,6)
+ for i,pi in pairs(pots) do
+  print(_p[pi][1],40+(i-1)*30,110,5)
+ end
+ print("\x96 leave  \x97 buy",8,118,5)
+end
+
+function dshasgn()
+ rectfill(10,20,118,108,0)
+ rect(10,20,118,108,10)
+ print("give ".._a[shacc][1].." to:",14,24,10)
+ for i,u in pairs(py) do
+  local c=i==sel and 10 or 6
+  local y=36+(i-1)*18
+  spr(u.ji,14,y)
+  print(u.nm.." "..jn[u.ji],26,y,c)
+  local cur_a="none"
+  if u.acc then cur_a=_a[u.acc][1] end
+  print("acc: "..cur_a,26,y+8,5)
+  if i==sel then print(">",8,y,10) end
+ end
+ print("\x96 cancel  \x97 equip",14,96,5)
 end
 __gfx__
 0000000000fff00000666000000e000000fff0000000000000888000000000000494490080008000000000600000000000000000000000000006600000777000
