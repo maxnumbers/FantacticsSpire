@@ -301,12 +301,14 @@ function init_combat()
  cmsg=""
  cmt=0
  pts={}
+ ftx={}
  cspd=1
  potmenu=false
 end
 
--- particles
+-- particles + floating text
 pts={}
+ftx={}
 function addp(gx,gy,col)
  for i=1,4 do
   add(pts,{
@@ -318,12 +320,24 @@ function addp(gx,gy,col)
  end
 end
 
+function addfloat(gx,gy,txt,col)
+ add(ftx,{
+  x=gx*14+32,y=gy*14+18,
+  txt=txt,c=col,l=30,dy=-0.4
+ })
+end
+
 function uptp()
  for p in all(pts) do
   p.x+=p.dx
   p.y+=p.dy
   p.l-=1
   if p.l<=0 then del(pts,p) end
+ end
+ for f in all(ftx) do
+  f.y+=f.dy
+  f.l-=1
+  if f.l<=0 then del(ftx,f) end
  end
 end
 
@@ -443,9 +457,11 @@ function doact(u)
     if s[3]=="H" then
      for f in all(fr) do f.hp=min(f.mhp,f.hp+pw) end
      cmsg=s[1].." +"..pw
+    for f in all(fr) do addfloat(f.x,f.y,"+"..pw,11) end
     else
      tgt.hp=min(tgt.mhp,tgt.hp+pw)
      cmsg=s[1].." +"..pw
+     addfloat(tgt.x,tgt.y,"+"..pw,11)
      addp(tgt.x,tgt.y,11)
     end
     cmt=25
@@ -573,6 +589,7 @@ function doact(u)
      f.hp-=dm
      if f.hp<=0 then f.alive=false end
      addp(f.x,f.y,8)
+     addfloat(f.x,f.y,"-"..dm,8)
     end
     cmsg=s[1].." -"..dm
     cmt=25
@@ -598,6 +615,7 @@ function doact(u)
     if not ctr then
      tgt.hp-=dm
      cmsg=s[1].." -"..dm
+     addfloat(tgt.x,tgt.y,"-"..dm,8)
      -- xtra effects: secondary debuff
      local x=s[7]
      if x!="0" and n(s[8])>0 then
@@ -643,6 +661,7 @@ function doact(u)
   end
   if not ctr then
    tgt.hp-=dm cmsg="atk -"..dm
+   addfloat(tgt.x,tgt.y,"-"..dm,8)
    if tgt.hp<=0 then tgt.alive=false sfx(3)
    else sfx(0) end
   end
@@ -1603,6 +1622,14 @@ function dcombat()
    local aw=flr(8*u.atb/100)
    rectfill(bx,by+11,bx+8,by+11,1)
    rectfill(bx,by+11,bx+aw,by+11,10)
+   -- buff/debuff dots
+   local dx=0
+   for b in all(u.buffs) do
+    pset(bx+dx,by-1,12) dx+=2
+   end
+   for d in all(u.debuffs) do
+    pset(bx+dx,by-1,8) dx+=2
+   end
   end
  end
 
@@ -1618,12 +1645,29 @@ function dcombat()
    local aw=flr(8*e.atb/100)
    rectfill(bx,by+11,bx+8,by+11,1)
    rectfill(bx,by+11,bx+aw,by+11,9)
+   -- buff/debuff dots
+   local dx=0
+   for b in all(e.buffs) do
+    pset(bx+dx,by-1,12) dx+=2
+   end
+   for d in all(e.debuffs) do
+    pset(bx+dx,by-1,8) dx+=2
+   end
   end
  end
 
  -- particles
  for p in all(pts) do
   pset(p.x,p.y,p.c)
+ end
+
+ -- floating text
+ for f in all(ftx) do
+  if f.l>10 then
+   print(f.txt,f.x,f.y,f.c)
+  elseif f.l>0 and f.l%2==0 then
+   print(f.txt,f.x,f.y,f.c)
+  end
  end
 
  -- hud
