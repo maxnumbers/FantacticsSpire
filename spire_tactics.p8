@@ -302,6 +302,7 @@ function init_combat()
  cmt=0
  pts={}
  cspd=1
+ potmenu=false
 end
 
 -- particles
@@ -706,10 +707,76 @@ function cwin()
  end
 end
 
+-- apply potion to target
+function use_pot(pi,tgt)
+ local p=_p[pi]
+ local eff=p[2]
+ local pw=n(p[3])
+ if eff=="h" then
+  tgt.hp=min(tgt.mhp,tgt.hp+pw)
+  cmsg=tgt.nm.." +"..pw.."hp"
+ elseif eff=="e" then
+  for i=1,#tgt.cd do tgt.cd[i]=0 end
+  cmsg=tgt.nm.." cds reset"
+ elseif eff=="s" then
+  add(tgt.buffs,{st="s",val=3,dur=5})
+  cmsg=tgt.nm.." hasted"
+ elseif eff=="d" then
+  -- bomb: damage all enemies
+  for e in all(ens) do
+   if e.alive then
+    local d=max(1,pw-n(e.def or 0))
+    e.hp-=d
+    if e.hp<=0 then e.alive=false end
+    addp(e.x,e.y,8)
+   end
+  end
+  cmsg="bomb! "..pw.." dmg"
+ elseif eff=="n" then
+  -- smoke: buff all allies def
+  for u in all(py) do
+   if u.alive then
+    add(u.buffs,{st="d",val=5,dur=3})
+   end
+  end
+  cmsg="smoke screen!"
+ elseif eff=="r" then
+  -- revive: bring back dead unit
+  if not tgt.alive then
+   tgt.alive=true
+   tgt.hp=flr(tgt.mhp*pw/100)
+   cmsg=tgt.nm.." revived!"
+  else
+   cmsg="already alive"
+   return false
+  end
+ elseif eff=="t" then
+  -- shield: temp def buff
+  add(tgt.buffs,{st="d",val=flr(pw/10),dur=4})
+  cmsg=tgt.nm.." shielded"
+ end
+ cmt=30
+ return true
+end
+
 -- update combat
 function upcbt()
  if cmt>0 then
   cmt-=1
+  return
+ end
+
+ -- potion menu
+ if potmenu then
+  uppot()
+  return
+ end
+
+ -- open potion menu with 🅾️
+ if btnp(4) and #pots>0 then
+  potmenu=true
+  potsel=1
+  pottgt=0
   return
  end
 
@@ -736,6 +803,52 @@ function upcbt()
     end
     return
    end
+  end
+ end
+end
+
+-- potion menu update
+function uppot()
+ if pottgt==0 then
+  -- selecting potion
+  if btnp(2) then potsel=max(1,potsel-1) sfx(2) end
+  if btnp(3) then potsel=min(#pots,potsel+1) sfx(2) end
+  if btnp(5) then
+   -- selected a potion, now pick target
+   local p=_p[pots[potsel]]
+   local eff=p[2]
+   -- bomb/smoke are untargeted
+   if eff=="d" or eff=="n" then
+    if use_pot(pots[potsel],py[1]) then
+     deli(pots,potsel)
+    end
+    potmenu=false
+    sfx(1)
+   else
+    pottgt=1
+    sfx(2)
+   end
+  end
+  if btnp(4) then
+   -- cancel
+   potmenu=false
+   sfx(3)
+  end
+ else
+  -- selecting target
+  if btnp(2) then pottgt=max(1,pottgt-1) sfx(2) end
+  if btnp(3) then pottgt=min(3,pottgt+1) sfx(2) end
+  if btnp(5) and pottgt<=#py then
+   local tgt=py[pottgt]
+   if use_pot(pots[potsel],tgt) then
+    deli(pots,potsel)
+   end
+   potmenu=false
+   sfx(1)
+  end
+  if btnp(4) then
+   pottgt=0
+   sfx(3)
   end
  end
 end
@@ -1408,6 +1521,45 @@ function dcombat()
    spr(u.ji,xi*28+2,85)
    print(u.hp,xi*28+12,85,u.hp<u.mhp*0.3 and 8 or 11)
    xi+=1
+  end
+ end
+
+ -- potion indicator
+ if #pots>0 and not potmenu and cmt<=0 then
+  local blink=t%40<25
+  if blink then
+   print("\x96"..#pots,110,86,11)
+  end
+ end
+
+ -- potion overlay
+ if potmenu then
+  rectfill(2,20,126,90,0)
+  rect(2,20,126,90,11)
+  print("potions",4,22,11)
+
+  if pottgt==0 then
+   -- potion list
+   for i,pi in pairs(pots) do
+    local p=_p[pi]
+    local c=i==potsel and 10 or 6
+    local y=30+(i-1)*16
+    print(p[1],8,y,c)
+    print("eff:"..p[2].." pw:"..p[3],8,y+7,5)
+   end
+   print("\x96 cancel  \x97 use",8,82,5)
+  else
+   -- target select
+   print("use ".._p[pots[potsel]][1].." on:",8,30,11)
+   for i,u in pairs(py) do
+    local c=i==pottgt and 10 or 6
+    local y=40+(i-1)*14
+    print(u.nm.." "..jn[u.ji],12,y,c)
+    local st=u.alive and
+     (u.hp.."/"..u.mhp.."hp") or "dead"
+    print(st,12,y+7,u.alive and 5 or 8)
+   end
+   print("\x96 back  \x97 use",8,82,5)
   end
  end
 end

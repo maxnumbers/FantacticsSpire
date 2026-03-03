@@ -721,3 +721,41 @@ class TestRewardScreen:
             "cwin doesn't reference potion inventory"
         assert re.search(r'rwdr', body), \
             "cwin doesn't set potion drop reward"
+
+
+# ============================================================
+# T23: Potion System (W3.3)
+# ============================================================
+
+class TestPotionSystem:
+    def test_use_pot_exists(self, cart):
+        """use_pot() must exist."""
+        body = cart.get_function_body("use_pot")
+        assert body is not None, "use_pot function not found"
+
+    def test_uppot_exists(self, cart):
+        """uppot() must exist for potion menu navigation."""
+        body = cart.get_function_body("uppot")
+        assert body is not None, "uppot function not found"
+
+    def test_potion_effects_handled(self, cart):
+        """use_pot() must handle all potion effect types."""
+        body = cart.get_function_body("use_pot")
+        assert body is not None
+        for eff in ["h", "e", "s", "d", "n", "r", "t"]:
+            assert re.search(rf'eff\s*==\s*"{eff}"', body), \
+                f"use_pot doesn't handle effect type '{eff}'"
+
+    def test_potmenu_pauses_atb(self, cart):
+        """Combat must check potmenu and skip ATB when open."""
+        body = cart.get_function_body("upcbt")
+        assert body is not None
+        assert re.search(r'potmenu', body), \
+            "upcbt doesn't check potmenu state"
+
+    def test_potion_overlay_drawn(self, cart):
+        """dcombat() must draw potion overlay when potmenu active."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert re.search(r'potmenu', body), \
+            "dcombat doesn't render potion overlay"
