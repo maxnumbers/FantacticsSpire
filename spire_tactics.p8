@@ -137,62 +137,84 @@ end
 
 -- map gen
 function genmap()
+ -- v2: 6 rows, StS layout
+ -- tp: 0=start 1=battle 2=elite
+ --     3=camp 4=boss 5=shop
  nds={}
  cnod=nil
- for row=0,4 do
+ local br={}
+ for row=0,5 do
+  br[row]={}
   local nc
-  if row==0 or row==4 then nc=1
-  else nc=2+flr(rnd(2)) end
+  if row==0 then nc=3
+  elseif row==2 then nc=2
+  elseif row==5 then nc=1
+  else nc=3+flr(rnd(2))
+  end
   for i=1,nc do
-   local tp
-   if row==0 then tp=0
-   elseif row==4 then tp=4
-   elseif row==1 then
-    if rnd(10)<7 then tp=1
-    else tp=3 end
-   else
-    local r=rnd(10)
-    if r<5 then tp=1
-    elseif r<7 then tp=2
-    elseif r<9 then tp=3
-    else tp=1 end
-   end
-   add(nds,{
+   local nd={
     row=row,col=i,nc=nc,
-    x=flr(20+((88)/(nc+1))*i),
-    y=10+row*22,
-    tp=tp,cn={},dn=false
-   })
+    x=flr(20+88/(nc+1)*i),
+    y=6+row*16,
+    tp=1,cn={},dn=false
+   }
+   if row==0 then nd.tp=0
+   elseif row==5 then nd.tp=4 end
+   add(nds,nd)
+   add(br[row],nd)
   end
  end
- -- connect
+ -- structural guarantees
+ -- 2 campfires: rows 1,4
+ br[1][1+flr(rnd(#br[1]))].tp=3
+ br[4][1+flr(rnd(#br[4]))].tp=3
+ -- 2 elites: rows 3,4
+ br[3][1+flr(rnd(#br[3]))].tp=2
+ for nd in all(br[4]) do
+  if nd.tp==1 then nd.tp=2 break end
+ end
+ -- 1 shop: row 1 or 3
+ local sr=rnd(1)<0.5 and 1 or 3
+ for nd in all(br[sr]) do
+  if nd.tp==1 then nd.tp=5 break end
+ end
+ -- connect: proximity-based
  for nd in all(nds) do
-  if nd.row<4 then
+  if nd.row<5 then
    for n2 in all(nds) do
     if n2.row==nd.row+1 then
-     local d=abs(nd.col/(nd.nc+1)-n2.col/(n2.nc+1))
-     if d<0.45 or rnd(1)<0.25 then
+     local d=abs(nd.col/(nd.nc+1)
+      -n2.col/(n2.nc+1))
+     if d<0.4 or rnd(1)<0.15 then
       add(nd.cn,n2)
      end
     end
    end
-   if #nd.cn<2 then
+   if #nd.cn==0 then
     for n2 in all(nds) do
-     if n2.row==nd.row+1 and not _has(nd.cn,n2) then
-      add(nd.cn,n2)
-      if #nd.cn>=2 then break end
+     if n2.row==nd.row+1 then
+      add(nd.cn,n2) break
      end
     end
    end
   end
  end
- for nd in all(nds) do
-  if nd.row==0 then
-   cnod=nd
-   nd.dn=true
-   break
+ -- ensure all nodes reachable
+ for row=1,5 do
+  for nd in all(br[row]) do
+   local ok=false
+   for pn in all(br[row-1]) do
+    if _has(pn.cn,nd) then
+     ok=true break
+    end
+   end
+   if not ok then
+    add(br[row-1][1].cn,nd)
+   end
   end
  end
+ cnod=br[0][1]
+ cnod.dn=true
  sel=1
 end
 
@@ -721,6 +743,8 @@ function _update60()
   end
  elseif gs=="camp" then
   upcamp()
+ elseif gs=="shop" then
+  upshop()
  elseif gs=="gover" then
   if btnp(5) then _init() end
  elseif gs=="win" then
@@ -736,7 +760,7 @@ function upmap()
   end
  end
  if #opts==0 then
-  if cnod.row>=4 then
+  if cnod.row>=5 then
    if fl>=mxfl then gs="win"
    else fl+=1 genmap() end
    return
@@ -749,6 +773,7 @@ function upmap()
   sel=1
   sfx(2)
   if cnod.tp==3 then init_camp()
+  elseif cnod.tp==5 then init_shop()
   else init_setup() end
  end
 end
@@ -805,6 +830,20 @@ function upcamp()
  end
 end
 
+function init_shop()
+ gs="shop"
+ sel=1
+end
+
+function upshop()
+ -- placeholder: press ❎ to leave
+ if btnp(5) then
+  cnod.dn=true
+  gs="map"
+  sfx(2)
+ end
+end
+
 -- ===== drawing =====
 function _draw()
  cls(0)
@@ -828,6 +867,7 @@ function _draw()
    print("\x97 continue",36,84,6)
   end
  elseif gs=="camp" then dcamp()
+ elseif gs=="shop" then dshop()
  elseif gs=="gover" then
   rectfill(20,30,108,90,0)
   rect(20,30,108,90,8)
@@ -891,7 +931,7 @@ function dmap()
 
  for nd in all(nds) do
   local sp=16
-  if nd.tp>=1 and nd.tp<=4 then sp=15+nd.tp end
+  if nd.tp>=1 and nd.tp<=5 then sp=15+nd.tp end
   if nd.tp==0 then sp=16 end
 
   local col=5
@@ -1075,6 +1115,16 @@ function dcamp()
 
  print("\x97 to select",36,116,5)
 end
+
+function dshop()
+ rectfill(10,10,118,118,0)
+ rect(10,10,118,118,10)
+ rect(11,11,117,117,4)
+ print("shop",48,20,10)
+ print("g:"..gold,48,32,10)
+ print("(coming soon)",32,56,6)
+ print("\x97 leave",44,100,6)
+end
 __gfx__
 0000000000fff00000666000000e000000fff0000000000000888000000000000494490080008000000000600000000000000000000000000006600000777000
 0000000000f7f0000667660000eee00000f7f00000bbb0000880880055500000499999408808880000000600088088000cccccc0000a00000006600007777700
@@ -1084,14 +1134,14 @@ __gfx__
 000000000044400000ccc0000022200000b3b0000bbbbb0000888000055555004949494008888000004000000088800000cccc00000a00000bbbbb0000777000
 000000000004040000c0c0000002020000b0b00000bbb0000080800005005000040904000a080a000400000000080000000cc0000000000006bbb60007070700
 000000000004040000c0c0000002020000b0b0000000000000800800050050000409040008000800000000000000000000000000000000000066600000000000
-6000000600aaa000000900000a000a00aa0000aa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-060000600a777a00009900000a0a0a00a000000a00000000000c0000000000000000000000000000000000000000000000000000000000000000000000000000
-006006000777770009a990000aaaaa000000000000aaaa0000ccc000000000000000000000000000000000000000000000000000000000000000000000000000
-000660000708070009aa90000aaaaa00000000000aaaaaa00cc7cc00000000000000000000000000000000000000000000000000000000000000000000000000
-00066000077777009aaaa90009999900000000000aaaaaa000ccc000000000000000000000000000000000000000000000000000000000000000000000000000
-00600600007770000aaaa000099999000000000000aaaa00000c0000000000000000000000000000000000000000000000000000000000000000000000000000
-06000060070707000444440009999900a000000a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-60000006000000000044400000000000aa0000aa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+6000000600aaa000000900000a000a0000aaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+060000600a777a00009900000a0a0a000aaaaaa000000000000c0000000000000000000000000000000000000000000000000000000000000000000000000000
+006006000777770009a990000aaaaa000aa99aa000aaaa0000ccc000000000000000000000000000000000000000000000000000000000000000000000000000
+000660000708070009aa90000aaaaa000a9aa9a00aaaaaa00cc7cc00000000000000000000000000000000000000000000000000000000000000000000000000
+00066000077777009aaaa900099999000a9aa9a00aaaaaa000ccc000000000000000000000000000000000000000000000000000000000000000000000000000
+00600600007770000aaaa000099999000aa99aa000aaaa00000c0000000000000000000000000000000000000000000000000000000000000000000000000000
+060000600707070004444400099999000aaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+6000000600000000004440000000000000aaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

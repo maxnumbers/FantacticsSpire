@@ -299,27 +299,66 @@ class TestMapConstraints:
         """Row 0 must always be a regular battle (tp=0)."""
         body = cart.get_function_body("genmap")
         assert body is not None
-        assert re.search(r'row==0\s+then\s+tp=0', body), \
+        assert re.search(r'row==0\s+then\s+nd\.tp=0', body), \
             "genmap doesn't force row 0 to type 0"
 
     def test_row1_no_elites(self, cart):
-        """Row 1 should not contain elite fights."""
+        """Row 1 should not receive elite (tp=2) assignments."""
         body = cart.get_function_body("genmap")
         assert body is not None
-        assert re.search(r'row==1', body), \
-            "genmap has no special handling for row 1"
-        m = re.search(r'row==1\b(.*?)(?:\belse\b|\belseif\b)', body, re.DOTALL)
-        assert m, "Could not extract row==1 branch"
-        row1_branch = m.group(1)
-        assert 'tp=2' not in row1_branch, \
-            f"Row 1 can assign tp=2 (elite): {row1_branch.strip()}"
+        # Elites placed via br[3] and br[4] only
+        assert re.search(r'br\[3\]', body) and 'tp=2' in body, \
+            "genmap doesn't place elites on row 3"
+        assert re.search(r'all\(br\[4\]\)', body), \
+            "genmap doesn't iterate row 4 for elite placement"
+        # Ensure no br[1] elite assignment
+        assert not re.search(r'br\[1\].*tp=2', body), \
+            "genmap places elites on row 1"
 
     def test_boss_only_on_last_row(self, cart):
-        """Boss (tp=4) should only appear on row 4."""
+        """Boss (tp=4) should only appear on row 5."""
         body = cart.get_function_body("genmap")
         assert body is not None
-        assert re.search(r'row==4\s+then\s+tp=4', body), \
-            "genmap doesn't restrict boss to row 4"
+        assert re.search(r'row==5\s+then\s+nd\.tp=4', body), \
+            "genmap doesn't restrict boss to row 5"
+
+    def test_six_rows(self, cart):
+        """Map should have 6 rows (0-5)."""
+        body = cart.get_function_body("genmap")
+        assert body is not None
+        assert re.search(r'for\s+row=0\s*,\s*5\b', body), \
+            "genmap doesn't iterate rows 0-5"
+
+    def test_pinch_point_row2(self, cart):
+        """Row 2 should be a pinch point (2 nodes max)."""
+        body = cart.get_function_body("genmap")
+        assert body is not None
+        assert re.search(r'row==2\s+then\s+nc=2', body), \
+            "genmap doesn't force row 2 to 2 nodes"
+
+    def test_shop_type_exists(self, cart):
+        """Map generator should include shop nodes (tp=5)."""
+        body = cart.get_function_body("genmap")
+        assert body is not None
+        assert re.search(r'\.tp=5', body), \
+            "genmap doesn't assign shop type (tp=5)"
+
+    def test_structural_guarantees(self, cart):
+        """Map must guarantee campfires, elites, and shop."""
+        body = cart.get_function_body("genmap")
+        assert body is not None
+        # At least 2 campfire placements (tp=3)
+        camp_placements = re.findall(r'\.tp=3', body)
+        assert len(camp_placements) >= 2, \
+            f"Only {len(camp_placements)} campfire placements, need >=2"
+        # At least 2 elite placements (tp=2)
+        elite_placements = re.findall(r'\.tp=2', body)
+        assert len(elite_placements) >= 2, \
+            f"Only {len(elite_placements)} elite placements, need >=2"
+        # At least 1 shop placement (tp=5)
+        shop_placements = re.findall(r'\.tp=5', body)
+        assert len(shop_placements) >= 1, \
+            f"No shop placements found"
 
 
 # ============================================================
