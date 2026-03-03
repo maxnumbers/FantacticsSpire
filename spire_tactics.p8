@@ -241,8 +241,48 @@ end
 cur={x=0,y=0}
 selu=1
 
+function gen_ens()
+ ens={}
+ if cnod.tp==4 then
+  -- boss: use _b table
+  local bi=min(fl,#_b)
+  local b=_b[bi]
+  local e=mke(1,4,1)
+  e.nm=b[1] e.spr=n(b[2])
+  e.hp=n(b[3]) e.mhp=e.hp
+  e.atk=n(b[4]) e.spd=n(b[5])
+  e.def=n(b[7])
+  add(ens,e)
+  local ne=1+flr(rnd(2))
+  for i=1,ne do
+   local ei=min(1+flr(rnd(5)),10)
+   add(ens,mke(ei,4+flr(rnd(2)),i))
+  end
+ elseif cnod.tp==2 then
+  -- elite: pick from elite pool (11-15)
+  local ne=1+flr(rnd(2))
+  for i=1,ne do
+   local ei=11+flr(rnd(5))
+   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
+   add(ens,e)
+  end
+ else
+  -- regular: pick from 1-10
+  local ne=min(2+flr(fl*0.7),4)
+  for i=1,ne do
+   local ei=1+flr(rnd(min(3+fl*2,10)))
+   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
+   e.hp=flr(e.hp*(0.7+fl*0.3))
+   e.mhp=e.hp
+   e.atk=flr(e.atk*(0.8+fl*0.2))
+   add(ens,e)
+  end
+ end
+end
+
 function init_setup()
  gs="setup"
+ gen_ens()
  for i,u in pairs(py) do
   u.x=flr(rnd(2))
   u.y=i-1
@@ -257,45 +297,6 @@ function init_setup()
 end
 
 function init_combat()
- ens={}
- local ne,pool
- if cnod.tp==4 then
-  -- boss: use _b table
-  local bi=min(fl,#_b)
-  local b=_b[bi]
-  local e=mke(1,4,1) -- placeholder
-  e.nm=b[1] e.spr=n(b[2])
-  e.hp=n(b[3]) e.mhp=e.hp
-  e.atk=n(b[4]) e.spd=n(b[5])
-  e.def=n(b[7])
-  add(ens,e)
-  -- boss adds
-  ne=1+flr(rnd(2))
-  for i=1,ne do
-   local ei=min(1+flr(rnd(5)),10)
-   add(ens,mke(ei,4+flr(rnd(2)),i))
-  end
- elseif cnod.tp==2 then
-  -- elite: pick from elite pool (11-15)
-  ne=1+flr(rnd(2))
-  for i=1,ne do
-   local ei=11+flr(rnd(5))
-   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
-   add(ens,e)
-  end
- else
-  -- regular: pick from 1-10
-  ne=min(2+flr(fl*0.7),4)
-  for i=1,ne do
-   local ei=1+flr(rnd(min(3+fl*2,10)))
-   local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
-   -- floor scaling
-   e.hp=flr(e.hp*(0.7+fl*0.3))
-   e.mhp=e.hp
-   e.atk=flr(e.atk*(0.8+fl*0.2))
-   add(ens,e)
-  end
- end
  gs="combat"
  cmsg=""
  cmt=0
@@ -1044,6 +1045,18 @@ function dmap()
   spr(sp,nd.x,nd.y)
  end
 
+ -- selected node preview
+ if #opts>0 and sel<=#opts then
+  local sn=opts[sel]
+  local nms={"battle","elite","campfire","boss","shop"}
+  local cols={6,9,11,8,10}
+  local tp=sn.tp
+  if tp>=1 and tp<=5 then
+   rectfill(0,90,127,98,1)
+   print("\x83:"..nms[tp],4,92,cols[tp])
+  end
+ end
+
  -- party bar
  rectfill(0,100,127,127,1)
  for i,u in pairs(py) do
@@ -1060,10 +1073,16 @@ end
 
 function dsetup()
  rectfill(0,0,127,9,1)
- print("setup - place unit "..selu.."/3",4,2,7)
+ print("place unit "..selu.."/3",4,2,7)
+ -- enemy count
+ local tp=cnod.tp
+ local lbl=tp==4 and "boss" or
+  (tp==2 and "elite" or "battle")
+ print(lbl.." x"..#ens,80,2,
+  tp==4 and 8 or (tp==2 and 9 or 6))
 
  -- grid 6x4
- local gx0,gy0=22,16
+ local gx0,gy0=22,14
  local cs=14
  for gx=0,5 do
   for gy=0,3 do
@@ -1074,6 +1093,13 @@ function dsetup()
    else c=(gx+gy)%2==0 and 1 or 2 end
    rectfill(bx,by,bx+cs-2,by+cs-2,c)
   end
+ end
+
+ -- enemy preview on grid
+ for e in all(ens) do
+  local bx=gx0+e.x*cs+3
+  local by=gy0+e.y*cs+3
+  spr(e.spr,bx,by)
  end
 
  -- placed units
@@ -1089,24 +1115,29 @@ function dsetup()
  local cy=gy0+cur.y*cs-1
  rect(cx,cy,cx+cs,cy+cs,10)
 
- -- unit info panel
- local u=py[min(selu,3)]
- rectfill(0,74,127,127,1)
- rect(0,74,127,127,6)
- spr(u.ji,4,78)
- print(u.nm.." "..jn[u.ji],14,78,7)
- print("hp:"..u.mhp.." atk:"..u.atk.." def:"..u.def.." spd:"..u.spd,4,88,6)
+ -- bottom panel
+ rectfill(0,72,127,127,1)
+ rect(0,72,127,127,6)
 
- -- skills
- local si=0
- local sks=ugetsk(u)
- for s in all(sks) do
-  local tp=s[3]
-  print(s[1].."("..tp..") pw:"..s[4].." rng:"..s[5],4,98+si*8,12)
-  si+=1
+ -- current unit info
+ local u=py[min(selu,3)]
+ spr(u.ji,4,74)
+ print(u.nm.." "..jn[u.ji],14,74,7)
+ print("hp:"..u.mhp.." at:"..u.atk
+  .." df:"..u.def.." sp:"..u.spd,4,83,6)
+
+ -- enemy lineup
+ print("enemies:",4,93,8)
+ local ex=4
+ for e in all(ens) do
+  spr(e.spr,ex,101)
+  print(e.nm,ex+10,101,6)
+  print("hp:"..e.mhp.." at:"..e.atk,
+   ex+10,108,5)
+  ex+=42
  end
 
- print("\x97=place",4,118,5)
+ print("\x97=place",4,120,5)
 end
 
 function dcombat()

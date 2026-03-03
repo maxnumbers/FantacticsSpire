@@ -601,3 +601,69 @@ class TestDraftScreen:
             "Draft doesn't call genmap() after picking"
         assert re.search(r'gs\s*=\s*"map"', body), \
             "Draft doesn't transition to map state"
+
+
+# ============================================================
+# T21: Setup Screen + Enemy Preview (W4.2 + W2.3)
+# ============================================================
+
+class TestSetupScreen:
+    def test_gen_ens_exists(self, cart):
+        """gen_ens() must exist as separate enemy generator."""
+        body = cart.get_function_body("gen_ens")
+        assert body is not None, "gen_ens function not found"
+
+    def test_gen_ens_handles_boss(self, cart):
+        """gen_ens() should handle boss encounters (tp==4)."""
+        body = cart.get_function_body("gen_ens")
+        assert body is not None
+        assert re.search(r'cnod\.tp\s*==\s*4', body), \
+            "gen_ens doesn't check for boss node type"
+        assert re.search(r'_b\[', body), \
+            "gen_ens doesn't reference boss table for boss fights"
+
+    def test_gen_ens_handles_elite(self, cart):
+        """gen_ens() should handle elite encounters (tp==2)."""
+        body = cart.get_function_body("gen_ens")
+        assert body is not None
+        assert re.search(r'cnod\.tp\s*==\s*2', body), \
+            "gen_ens doesn't check for elite node type"
+
+    def test_init_setup_calls_gen_ens(self, cart):
+        """init_setup() must call gen_ens() to populate enemies before placement."""
+        body = cart.get_function_body("init_setup")
+        assert body is not None
+        assert re.search(r'gen_ens\(\)', body), \
+            "init_setup doesn't call gen_ens()"
+
+    def test_init_setup_sets_state(self, cart):
+        """init_setup() must set gs='setup'."""
+        body = cart.get_function_body("init_setup")
+        assert body is not None
+        assert re.search(r'gs\s*=\s*"setup"', body), \
+            "init_setup doesn't set game state to 'setup'"
+
+    def test_dsetup_shows_enemies_on_grid(self, cart):
+        """dsetup() must render enemies on the battle grid."""
+        body = cart.get_function_body("dsetup")
+        assert body is not None
+        assert re.search(r'for\s+e\s+in\s+all\(ens\)', body), \
+            "dsetup doesn't iterate enemies for grid display"
+        assert re.search(r'spr\(e\.spr', body), \
+            "dsetup doesn't draw enemy sprites"
+
+    def test_dsetup_shows_enemy_lineup(self, cart):
+        """dsetup() must show enemy stats in bottom panel."""
+        body = cart.get_function_body("dsetup")
+        assert body is not None
+        assert re.search(r'e\.mhp', body), \
+            "dsetup doesn't show enemy HP"
+        assert re.search(r'e\.atk', body), \
+            "dsetup doesn't show enemy ATK"
+
+    def test_dmap_shows_node_type_preview(self, cart):
+        """dmap() should show selected node type name."""
+        body = cart.get_function_body("dmap")
+        assert body is not None
+        assert re.search(r'battle.*elite.*campfire.*boss.*shop', body), \
+            "dmap doesn't contain node type name list"
