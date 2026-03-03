@@ -1036,6 +1036,8 @@ function _update60()
   upshasgn()
  elseif gs=="skview" then
   upskview()
+ elseif gs=="boss_intro" then
+  upboss()
  elseif gs=="gover" then
   if btnp(5) then _init() end
  elseif gs=="win" then
@@ -1065,6 +1067,7 @@ function upmap()
   sfx(2)
   if cnod.tp==3 then init_camp()
   elseif cnod.tp==5 then init_shop()
+  elseif cnod.tp==4 then init_boss()
   else init_setup() end
  end
 end
@@ -1253,6 +1256,54 @@ function upshasgn()
  end
 end
 
+-- boss intro
+function init_boss()
+ gs="boss_intro"
+ local bi=min(fl,#_b)
+ bossdat=_b[bi]
+ cmt=60
+end
+
+function upboss()
+ if cmt>0 then cmt-=1 return end
+ if btnp(5) then
+  init_setup()
+  sfx(2)
+ end
+end
+
+function dboss()
+ cls(0)
+ -- dramatic backdrop
+ for i=0,127,8 do
+  line(0,i+t%8,127,i+t%8,2)
+ end
+ rectfill(16,20,112,108,0)
+ rect(16,20,112,108,8)
+ rect(17,21,111,107,2)
+
+ -- boss sprite (scaled via 4 spr calls)
+ local sx=48
+ spr(n(bossdat[2]),sx,32)
+ spr(n(bossdat[2]),sx+8,32)
+ spr(n(bossdat[2]),sx,40)
+ spr(n(bossdat[2]),sx+8,40)
+
+ -- boss name
+ print(bossdat[1],40,56,8)
+ print("floor "..fl.." boss",36,68,7)
+
+ -- stats preview
+ print("hp: "..bossdat[3],40,80,6)
+ print("atk: "..bossdat[4],40,88,6)
+
+ if cmt<=0 then
+  if t%40<25 then
+   print("\x97 to battle",34,98,10)
+  end
+ end
+end
+
 -- skill viewer
 function init_skview(retgs)
  skret=retgs
@@ -1360,22 +1411,45 @@ function _draw()
  elseif gs=="shop" then dshop()
  elseif gs=="shasgn" then dshasgn()
  elseif gs=="skview" then dskview()
+ elseif gs=="boss_intro" then dboss()
  elseif gs=="gover" then
-  rectfill(20,30,108,90,0)
-  rect(20,30,108,90,8)
-  print("game over",40,40,8)
-  print("floor "..fl.."/"..mxfl,40,52,7)
-  print("gold: "..gold,40,62,10)
-  print("\x97 restart",38,78,6)
+  rectfill(12,16,116,112,0)
+  rect(12,16,116,112,8)
+  rect(13,17,115,111,2)
+  print("game over",40,20,8)
+  print("floor "..fl.."/"..mxfl,40,32,7)
+  print("gold: "..gold,40,40,10)
+  -- party fate
+  for i,u in pairs(py) do
+   local y=50+i*12
+   spr(u.ji,18,y)
+   print(u.nm.." "..jn[u.ji],30,y,
+    u.alive and 6 or 8)
+   if not u.alive then
+    print("fallen",90,y,8)
+   end
+  end
+  print("\x97 restart",38,100,6)
  elseif gs=="win" then
-  rectfill(16,26,112,100,0)
-  rect(16,26,112,100,11)
-  print("victory!",40,34,11)
-  print("the spire",38,46,7)
-  print("is conquered!",30,54,7)
-  print("floors: "..mxfl,36,68,6)
-  print("gold: "..gold,36,76,10)
-  print("\x97 new run",38,90,6)
+  rectfill(12,12,116,116,0)
+  rect(12,12,116,116,11)
+  rect(13,13,115,115,3)
+  print("victory!",40,18,11)
+  print("the spire is conquered!",14,28,7)
+  print("gold: "..gold,40,38,10)
+  -- party glory
+  for i,u in pairs(py) do
+   local y=46+i*14
+   spr(u.ji,18,y)
+   print(u.nm.." "..jn[u.ji],30,y,7)
+   if u.tier==2 then
+    print("t2",90,y,11)
+   end
+   if u.acc then
+    print(_a[u.acc][1],90,y+7,5)
+   end
+  end
+  print("\x97 new run",38,106,6)
  end
 end
 

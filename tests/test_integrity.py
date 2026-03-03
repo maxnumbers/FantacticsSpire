@@ -856,3 +856,40 @@ class TestSkillViewer:
             "dskview doesn't check discovery status"
         assert re.search(r'\?\?\?', body), \
             "dskview doesn't show ??? for undiscovered"
+
+
+# ============================================================
+# T26: Boss Intro + Endgame (W4.7)
+# ============================================================
+
+class TestBossIntro:
+    def test_init_boss_exists(self, cart):
+        """init_boss() must exist."""
+        body = cart.get_function_body("init_boss")
+        assert body is not None, "init_boss function not found"
+
+    def test_dboss_exists(self, cart):
+        """dboss() must exist for boss splash screen."""
+        body = cart.get_function_body("dboss")
+        assert body is not None, "dboss function not found"
+
+    def test_boss_intro_shows_name(self, cart):
+        """dboss() must display boss name."""
+        body = cart.get_function_body("dboss")
+        assert body is not None
+        assert re.search(r'bossdat\[1\]', body), \
+            "dboss doesn't display boss name"
+
+    def test_boss_node_goes_to_intro(self, cart):
+        """Map navigation must route boss nodes to init_boss."""
+        body = cart.get_function_body("upmap")
+        assert body is not None
+        assert re.search(r'init_boss\(\)', body), \
+            "upmap doesn't route boss nodes to init_boss"
+
+    def test_boss_intro_transitions_to_setup(self, cart):
+        """Boss intro must transition to setup on confirm."""
+        body = cart.get_function_body("upboss")
+        assert body is not None
+        assert re.search(r'init_setup\(\)', body), \
+            "upboss doesn't transition to setup"
