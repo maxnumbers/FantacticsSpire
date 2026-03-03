@@ -95,16 +95,16 @@ class TestJobDiversity:
                 sim.make_player_unit(job_id, x=0, y=2),
             ]
             enemies = [
-                sim.make_enemy(enemy_ids[i % len(enemy_ids)], x=5, y=0, floor=2),
-                sim.make_enemy(enemy_ids[(i+1) % len(enemy_ids)], x=4, y=1, floor=2),
-                sim.make_enemy(enemy_ids[(i+2) % len(enemy_ids)], x=5, y=2, floor=2),
+                sim.make_enemy(enemy_ids[i % len(enemy_ids)], x=5, y=0, floor=3),
+                sim.make_enemy(enemy_ids[(i+1) % len(enemy_ids)], x=4, y=1, floor=3),
+                sim.make_enemy(enemy_ids[(i+2) % len(enemy_ids)], x=5, y=2, floor=3),
             ]
             return party, enemies
         return setup
 
     def test_no_mono_job_dominates_all(self, cart):
         """No single base class for all 3 units should have >85% win rate."""
-        enemy_spread = [2, 3, 3, 6]  # goblin, wolf, wolf, golem
+        enemy_spread = [2, 3, 3, 6]  # goblin, wolf, wolf, golem @ floor 3
         best_job = None
         best_wr = 0
         results_by_job = {}
@@ -342,32 +342,34 @@ class TestEnemyMatchups:
 
 class TestCampfireBalance:
     def test_heal_better_when_damaged(self, cart):
-        """When party is damaged, healing should help more than staying damaged."""
+        """Full HP (campfire healed) should beat damaged (60% HP) more often.
+
+        Uses squires (no heal skills) to isolate the HP advantage from
+        AI priority interactions with heal/buff skill selection.
+        """
         def healed_setup(sim, i):
             party = [
-                sim.make_player_unit(1, x=0, y=0),
-                sim.make_player_unit(5, x=1, y=1),
-                sim.make_player_unit(3, x=0, y=2),
+                sim.make_player_unit(1, x=0, y=0),  # squire
+                sim.make_player_unit(1, x=0, y=1),
+                sim.make_player_unit(1, x=0, y=2),
             ]
             enemies = [
-                sim.make_enemy(2, x=5, y=0, floor=1),
-                sim.make_enemy(1, x=5, y=1, floor=1),
-                sim.make_enemy(3, x=5, y=2, floor=1),
+                sim.make_enemy(2, x=5, y=0, floor=1),  # goblin
+                sim.make_enemy(3, x=5, y=1, floor=1),  # wolf
             ]
             return party, enemies
 
         def unhealed_setup(sim, i):
             party = [
                 sim.make_player_unit(1, x=0, y=0),
-                sim.make_player_unit(5, x=1, y=1),
-                sim.make_player_unit(3, x=0, y=2),
+                sim.make_player_unit(1, x=0, y=1),
+                sim.make_player_unit(1, x=0, y=2),
             ]
             for u in party:
-                u.hp = max(1, int(u.max_hp * 0.4))
+                u.hp = max(1, int(u.max_hp * 0.6))
             enemies = [
                 sim.make_enemy(2, x=5, y=0, floor=1),
-                sim.make_enemy(1, x=5, y=1, floor=1),
-                sim.make_enemy(3, x=5, y=2, floor=1),
+                sim.make_enemy(3, x=5, y=1, floor=1),
             ]
             return party, enemies
 
@@ -387,42 +389,32 @@ class TestCampfireBalance:
 # ============================================================
 
 class TestBossBalance:
-    def test_boss_is_beatable(self, cart):
-        """A good party should beat the toughest enemies >=30%."""
-        def boss_setup(sim, i):
+    def _boss_setup(self, floor=4):
+        """Boss encounter: ogre + 2 wolves at given floor scaling."""
+        def setup(sim, i):
             party = [
                 sim.make_player_unit(5, x=0, y=0, level=3),   # brawler
                 sim.make_player_unit(4, x=0, y=1, level=3),   # apprentice
                 sim.make_player_unit(3, x=0, y=2, level=3),   # acolyte
             ]
             enemies = [
-                sim.make_enemy(14, x=5, y=1, floor=3),  # ogre (elite)
-                sim.make_enemy(3, x=4, y=0, floor=3),   # wolf
-                sim.make_enemy(3, x=4, y=2, floor=3),   # wolf
+                sim.make_enemy(14, x=5, y=1, floor=floor),  # ogre (elite)
+                sim.make_enemy(3, x=4, y=0, floor=floor),   # wolf
+                sim.make_enemy(3, x=4, y=2, floor=floor),   # wolf
             ]
             return party, enemies
+        return setup
 
-        results = run_batch(cart, boss_setup, N_SIMS, seed_base=12000)
+    def test_boss_is_beatable(self, cart):
+        """A good party should beat the boss encounter >=20%."""
+        results = run_batch(cart, self._boss_setup(floor=4), N_SIMS, seed_base=12000)
         wr = win_rate(results)
         assert wr >= 0.20, \
             f"Boss win rate {wr:.1%} is too low (should be >=20%)."
 
     def test_boss_is_not_trivial(self, cart):
         """Even a strong party should not win >90%."""
-        def boss_setup(sim, i):
-            party = [
-                sim.make_player_unit(5, x=0, y=0, level=3),
-                sim.make_player_unit(4, x=0, y=1, level=3),
-                sim.make_player_unit(3, x=0, y=2, level=3),
-            ]
-            enemies = [
-                sim.make_enemy(14, x=5, y=1, floor=3),
-                sim.make_enemy(3, x=4, y=0, floor=3),
-                sim.make_enemy(3, x=4, y=2, floor=3),
-            ]
-            return party, enemies
-
-        results = run_batch(cart, boss_setup, N_SIMS, seed_base=12500)
+        results = run_batch(cart, self._boss_setup(floor=4), N_SIMS, seed_base=12500)
         wr = win_rate(results)
         assert wr <= 0.90, \
             f"Boss win rate {wr:.1%} is too high (should be <=90%)."

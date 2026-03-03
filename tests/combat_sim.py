@@ -7,6 +7,9 @@ via p8_parser.py (no hardcoded copies).
 
 This simulator serves as the DESIGN SPECIFICATION. The Lua implementation
 should match its behavior. Drift is detected by anchor tests.
+
+v2: 11 effect handlers (a/A/h/H/b/B/d/D/p/l/c), buff/debuff tracking,
+    taunt, counter, poison DoT, mark, stun, revive, secondary effects.
 """
 
 import os
@@ -14,6 +17,13 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional
 from tests.p8_parser import P8Cart, load_cart
+
+
+@dataclass
+class Buff:
+    st: str   # stat: a=atk, d=def, s=spd, t=taunt, c=counter, etc.
+    val: int  # modifier value
+    dur: int  # remaining duration (0 = permanent)
 
 
 @dataclass
@@ -32,9 +42,9 @@ class Unit:
     team: int = 1  # 1=player, 2=enemy
     cooldowns: dict = field(default_factory=lambda: {})
     sprite: int = 0
-    behavior: int = 0  # 0=melee, 1=ranged, 2=aoe, 3=assassin
-    buff_def: int = 0  # temporary def bonus from block
-    buff_turns: int = 0
+    behavior: int = 0  # 0=nearest, 1=lowest HP, 2=backrow, etc.
+    buffs: list = field(default_factory=list)
+    debuffs: list = field(default_factory=list)
 
     def copy(self):
         u = Unit(
@@ -43,8 +53,9 @@ class Unit:
             spd=self.spd, x=self.x, y=self.y, atb=self.atb,
             alive=self.alive, team=self.team,
             cooldowns=dict(self.cooldowns), sprite=self.sprite,
-            behavior=self.behavior, buff_def=self.buff_def,
-            buff_turns=self.buff_turns
+            behavior=self.behavior,
+            buffs=[Buff(b.st, b.val, b.dur) for b in self.buffs],
+            debuffs=[Buff(d.st, d.val, d.dur) for d in self.debuffs]
         )
         return u
 
@@ -67,15 +78,60 @@ class CombatSim:
             return 0
         total = 0
         for r in self.relics:
-            # v2: accessories use "stat" key, v1 used "stat_key"
             key = r.get("stat_key", r.get("stat", ""))
             if key == stat_key[0]:
                 total += r.get("bonus", 0)
         return total
 
+    @staticmethod
+    def bufmod(unit, stat):
+        """Sum of buff/debuff modifiers for a stat."""
+        m = 0
+        for b in unit.buffs:
+            if b.st == stat:
+                m += b.val
+        for d in unit.debuffs:
+            if d.st == stat:
+                m -= d.val
+        return m
+
+    @staticmethod
+    def bfval(caster, target, skill):
+        """Compute buff/debuff value from skill data."""
+        pw = skill["power"]
+        x = skill.get("xtra", "0")
+        if x == "s":
+            return pw
+        if x == "a":
+            if pw <= 5:
+                return pw
+            return max(1, int(pw * target.atk / 100))
+        if x == "d":
+            return max(1, int(pw * target.def_ / 100))
+        return pw
+
+    def tick_buffs(self, unit):
+        """Tick down buff/debuff durations. Handle poison DoT."""
+        # Tick buffs (iterate backwards for safe removal)
+        for b in list(unit.buffs):
+            if b.dur > 0:
+                b.dur -= 1
+                if b.dur <= 0:
+                    unit.buffs.remove(b)
+        # Tick debuffs + poison
+        for d in list(unit.debuffs):
+            if d.st == "p":
+                unit.hp -= d.val
+                if unit.hp <= 0:
+                    unit.alive = False
+            if d.dur > 0:
+                d.dur -= 1
+                if d.dur <= 0:
+                    unit.debuffs.remove(d)
+
     def make_player_unit(self, job_id, level=1, x=0, y=0):
         """Create a player unit from job data."""
-        j = self.jobs[job_id - 1]  # 1-indexed
+        j = self.jobs[job_id - 1]
         hp = j["hp"] + level * 2 if level > 1 else j["hp"]
         atk = j["atk"] + (level - 1) // 2
         def_ = j["def_"] + (level - 1) // 2
@@ -87,7 +143,7 @@ class CombatSim:
 
     def make_enemy(self, enemy_id, x=4, y=0, floor=1):
         """Create an enemy unit from enemy data with floor scaling."""
-        e = self.cart.enemies[enemy_id - 1]  # 1-indexed
+        e = self.cart.enemies[enemy_id - 1]
         hp = int(e["hp"] * (1 + floor * 0.2))
         atk = int(e["atk"] * (1 + floor * 0.1))
         def_ = e.get("def_", 1)
@@ -109,19 +165,36 @@ class CombatSim:
         return abs(a.x - b.x) + abs(a.y - b.y)
 
     def calc_damage(self, attacker, defender, power=0, pierce=False):
-        """Damage formula matching v2 Lua: max(1, pw*atk/10 + bonus - def ± rnd)
+        """Damage formula matching v2 Lua calcdmg().
 
-        v2: power is ×10 multiplier (10=1.0×). Damage = floor(pw*atk/10) - def ± 1.
+        v2: max(1, pw*atk/10 + atk_bonus + bufmod(atk) - (def + bufmod(def)) ± 1)
+        Mark debuff: +50% damage.
         """
         atk_bonus = self.relic_bonus("atk", attacker.team)
-        base = int(power * attacker.atk / 10) + atk_bonus
+        atk_mod = self.bufmod(attacker, "a")
+        base = int(power * attacker.atk / 10) + atk_bonus + atk_mod
         if not pierce:
-            base -= defender.def_
+            def_mod = self.bufmod(defender, "d")
+            base -= (defender.def_ + def_mod)
+        # Mark: +50% damage
+        for d in defender.debuffs:
+            if d.st == "m":
+                base = int(base * 1.5)
+                break
         varied = base + random.randint(-1, 1)
         return max(1, varied)
 
     def do_action(self, unit, all_units):
         """Execute one unit's turn. Mirrors doact() in Lua."""
+        self.tick_buffs(unit)
+
+        # Stun check
+        for d in list(unit.debuffs):
+            if d.st == "n":
+                unit.debuffs.remove(d)
+                self.log.append(f"{unit.name} stunned")
+                return
+
         friends = [u for u in all_units if u.alive and u.team == unit.team]
         foes = [u for u in all_units if u.alive and u.team != unit.team]
         if not foes:
@@ -129,24 +202,28 @@ class CombatSim:
 
         skills = self.get_skills_for(unit)
 
-        # Decrement buff
-        if unit.buff_turns > 0:
-            unit.buff_turns -= 1
-            if unit.buff_turns <= 0:
-                unit.def_ -= unit.buff_def
-                unit.buff_def = 0
-
-        # 1) Try heal if anyone is low
+        # 1) Heal check (h, H + revive)
         for i, sk in enumerate(skills):
             sk_key = sk["name"]
             if sk["type"] in ("h", "H") and unit.cooldowns.get(sk_key, 0) == 0:
+                # Revive
+                if sk.get("xtra") == "r":
+                    pool = [u for u in all_units
+                            if not u.alive and u.team == unit.team]
+                    if pool:
+                        dead = pool[0]
+                        dead.alive = True
+                        dead.hp = max(1, int(dead.max_hp * sk["power"] / 100))
+                        unit.cooldowns[sk_key] = sk["cd"]
+                        self.log.append(f"{unit.name} revives {dead.name}")
+                        return
+
                 target = None
                 for f in friends:
                     if f.hp < f.max_hp * 0.5:
                         if target is None or f.hp < target.hp:
                             target = f
                 if target or sk["type"] == "H":
-                    # v2: heal power = pw * atk / 10
                     power = int(sk["power"] * unit.atk / 10)
                     if sk["type"] == "H":
                         for f in friends:
@@ -157,92 +234,168 @@ class CombatSim:
                     self.log.append(f"{unit.name} heals for {power}")
                     return
 
-        # 2) Find target (behavior-aware, matches Lua doact)
-        # FRONT-ROW BLOCKING: behavior 0 enemies must target frontmost
-        # player units (highest x). They cannot bypass to backline.
-        # behavior 1 (assassin) and 2 (backline) ignore blocking.
-        target_pool = foes
-        bf = unit.behavior
-        if bf == 0 and unit.team == 2 and len(foes) > 1:
-            max_x = max(f.x for f in foes)
-            front = [f for f in foes if f.x == max_x]
-            if front:
-                target_pool = front
-
+        # 2) Find target (taunt + behavior)
         nearest = None
         nearest_dist = 999
+        bf = unit.behavior
 
-        for f in target_pool:
-            d = self.manhattan(unit, f)
-            if bf == 1:
-                # Target lowest HP (assassin/focus fire)
-                if (nearest is None or f.hp < nearest.hp
-                        or (f.hp == nearest.hp and d < nearest_dist)):
+        # Taunt override
+        for f in foes:
+            for b in f.buffs:
+                if b.st == "t":
                     nearest = f
-                    nearest_dist = d
-            elif bf == 2:
-                # Target furthest back (lowest x = backrow)
-                if (nearest is None or f.x < nearest.x
-                        or (f.x == nearest.x and d < nearest_dist)):
-                    nearest = f
-                    nearest_dist = d
-            else:
-                # Default: nearest
-                if d < nearest_dist:
-                    nearest = f
-                    nearest_dist = d
+                    nearest_dist = self.manhattan(unit, f)
+
+        if nearest is None:
+            target_pool = foes
+            if bf == 0 and unit.team == 2 and len(foes) > 1:
+                max_x = max(f.x for f in foes)
+                front = [f for f in foes if f.x == max_x]
+                if front:
+                    target_pool = front
+
+            for f in target_pool:
+                d = self.manhattan(unit, f)
+                if bf == 1:
+                    if (nearest is None or f.hp < nearest.hp
+                            or (f.hp == nearest.hp and d < nearest_dist)):
+                        nearest = f
+                        nearest_dist = d
+                elif bf == 2:
+                    if (nearest is None or f.x < nearest.x
+                            or (f.x == nearest.x and d < nearest_dist)):
+                        nearest = f
+                        nearest_dist = d
+                else:
+                    if d < nearest_dist:
+                        nearest = f
+                        nearest_dist = d
 
         if nearest:
             nearest_dist = self.manhattan(unit, nearest)
 
-        # 3) Try buff/block skills (only when enemies are close)
+        # 3) Debuff check (d, D)
         for i, sk in enumerate(skills):
             sk_key = sk["name"]
-            if sk["type"] == "b" and unit.cooldowns.get(sk_key, 0) == 0:
-                if nearest_dist <= 2:
-                    # Remove old buff before applying new one
-                    if unit.buff_def > 0:
-                        unit.def_ -= unit.buff_def
-                    unit.buff_def = sk["power"]
-                    unit.buff_turns = 2
-                    unit.def_ += unit.buff_def
+            tp = sk["type"]
+            if tp in ("d", "D") and unit.cooldowns.get(sk_key, 0) == 0:
+                xtra = sk.get("xtra", "0")
+                dur = sk.get("dur", 0)
+                if tp == "D":
+                    if xtra == "t":
+                        # Taunt: buff self
+                        unit.buffs.append(Buff("t", 0, dur))
+                    else:
+                        for f in foes:
+                            val = self.bfval(unit, f, sk)
+                            f.debuffs.append(Buff(xtra, val, dur))
                     unit.cooldowns[sk_key] = sk["cd"]
-                    self.log.append(f"{unit.name} uses {sk['name']} (+{sk['power']} def)")
+                    self.log.append(f"{unit.name} uses {sk['name']}")
+                    return
+                elif nearest_dist <= sk["range"] and nearest:
+                    if xtra == "0" and sk["power"] == 0:
+                        # Steal
+                        if nearest.buffs:
+                            stolen = nearest.buffs[0]
+                            nearest.buffs.remove(stolen)
+                            unit.buffs.append(stolen)
+                            self.log.append(f"{unit.name} stole buff")
+                    else:
+                        val = self.bfval(unit, nearest, sk)
+                        nearest.debuffs.append(Buff(xtra, val, dur))
+                        self.log.append(
+                            f"{unit.name} uses {sk['name']} on {nearest.name}")
+                    unit.cooldowns[sk_key] = sk["cd"]
                     return
 
-        # 4) Try attack skills in range (a, A, p, l)
+        # 4) Buff check (b, B, c)
+        for i, sk in enumerate(skills):
+            sk_key = sk["name"]
+            tp = sk["type"]
+            if tp in ("b", "B", "c") and unit.cooldowns.get(sk_key, 0) == 0:
+                xtra = sk.get("xtra", "0")
+                dur = sk.get("dur", 0)
+                if tp == "c":
+                    unit.buffs.append(Buff("c", sk["power"], dur))
+                    self.log.append(f"{unit.name} uses {sk['name']} counter")
+                elif tp == "B":
+                    for f in friends:
+                        val = self.bfval(unit, f, sk)
+                        f.buffs.append(Buff(xtra, val, dur))
+                    self.log.append(f"{unit.name} uses {sk['name']} all")
+                else:
+                    # Single target buff
+                    btgt = unit
+                    rng = sk["range"]
+                    if rng > 0:
+                        for f in friends:
+                            if f is not unit and self.manhattan(unit, f) <= rng:
+                                btgt = f
+                                break
+                    val = self.bfval(unit, btgt, sk)
+                    btgt.buffs.append(Buff(xtra, val, dur))
+                    self.log.append(
+                        f"{unit.name} uses {sk['name']} +{val}")
+                unit.cooldowns[sk_key] = sk["cd"]
+                return
+
+        # 5) Attack skills (a, A, p, l)
         for i, sk in enumerate(skills):
             sk_key = sk["name"]
             tp = sk["type"]
             if tp in ("a", "A", "p", "l") and unit.cooldowns.get(sk_key, 0) == 0:
                 if tp == "A":
-                    # AoE: hit all foes
                     dmg = self.calc_damage(unit, foes[0], sk["power"])
                     for f in foes:
                         f.hp -= dmg
                         if f.hp <= 0:
                             f.alive = False
                     unit.cooldowns[sk_key] = sk["cd"]
-                    self.log.append(f"{unit.name} uses {sk['name']} AoE for {dmg}")
+                    self.log.append(
+                        f"{unit.name} uses {sk['name']} AoE for {dmg}")
                     return
                 elif nearest_dist <= sk["range"]:
                     pierce = (tp == "p")
-                    dmg = self.calc_damage(unit, nearest, sk["power"], pierce=pierce)
-                    nearest.hp -= dmg
-                    if tp == "l":
+                    dmg = self.calc_damage(
+                        unit, nearest, sk["power"], pierce=pierce)
+                    # Counter check (melee only)
+                    countered = False
+                    if nearest_dist <= 1:
+                        for b in list(nearest.buffs):
+                            if b.st == "c":
+                                ref = int(dmg * b.val / 100)
+                                unit.hp -= ref
+                                if unit.hp <= 0:
+                                    unit.alive = False
+                                nearest.buffs.remove(b)
+                                countered = True
+                                self.log.append(
+                                    f"{nearest.name} counters for {ref}")
+                                break
+                    if not countered:
+                        nearest.hp -= dmg
+                        # Xtra effects
+                        xtra = sk.get("xtra", "0")
+                        dur = sk.get("dur", 0)
+                        if xtra != "0" and dur > 0:
+                            val = self.bfval(unit, nearest, sk)
+                            nearest.debuffs.append(Buff(xtra, val, dur))
+                        if xtra == "k":
+                            unit.hp = min(unit.max_hp, unit.hp + dmg)
+                        if xtra == "n":
+                            nearest.debuffs.append(Buff("n", 0, 1))
+                    if tp == "l" and not countered:
                         unit.hp = min(unit.max_hp, unit.hp + dmg // 2)
-                    if nearest.hp <= 0:
+                    if not countered and nearest.hp <= 0:
                         nearest.alive = False
                     unit.cooldowns[sk_key] = sk["cd"]
                     self.log.append(
                         f"{unit.name} uses {sk['name']} on {nearest.name} "
-                        f"for {dmg} dmg (hp: {nearest.hp})"
-                    )
+                        f"for {dmg} dmg (hp: {nearest.hp})")
                     return
 
-        # 5) Move or basic attack
+        # 6) Move or basic attack
         if nearest_dist > 1:
-            # Move one step toward target
             if nearest.x > unit.x:
                 unit.x += 1
             elif nearest.x < unit.x:
@@ -253,15 +406,28 @@ class CombatSim:
                 unit.y -= 1
             self.log.append(f"{unit.name} moves to ({unit.x},{unit.y})")
         else:
-            # Basic attack (pw=10 = 1x atk multiplier)
-            dmg = self.calc_damage(unit, nearest, power=10)
-            nearest.hp -= dmg
-            if nearest.hp <= 0:
-                nearest.alive = False
+            # Basic attack with bufmod
+            a = unit.atk + self.relic_bonus("atk", unit.team) + self.bufmod(unit, "a")
+            d = nearest.def_ + self.bufmod(nearest, "d")
+            dmg = max(1, a - d + random.randint(-1, 1))
+            # Counter check
+            countered = False
+            for b in list(nearest.buffs):
+                if b.st == "c":
+                    unit.hp -= int(dmg * b.val / 100)
+                    if unit.hp <= 0:
+                        unit.alive = False
+                    nearest.buffs.remove(b)
+                    countered = True
+                    self.log.append(f"{nearest.name} counters for {dmg}")
+                    break
+            if not countered:
+                nearest.hp -= dmg
+                if nearest.hp <= 0:
+                    nearest.alive = False
             self.log.append(
                 f"{unit.name} attacks {nearest.name} for {dmg} dmg "
-                f"(hp: {nearest.hp})"
-            )
+                f"(hp: {nearest.hp})")
 
     def tick_cooldowns(self, unit):
         """Reduce all cooldowns by 1."""
@@ -298,7 +464,8 @@ class CombatSim:
                 if not u.alive:
                     continue
                 spd_bonus = self.relic_bonus("spd", u.team)
-                u.atb += u.spd + spd_bonus
+                spd_mod = self.bufmod(u, "s")
+                u.atb += max(1, u.spd + spd_bonus + spd_mod)
                 if u.atb >= 100:
                     u.atb = 0
                     self.do_action(u, all_units)
@@ -339,7 +506,7 @@ class CombatResult:
 
 def run_batch(cart, setup_fn, n=500, seed_base=0):
     """Run n simulations with a setup function.
-    
+
     setup_fn(sim, i) -> (party_list, enemy_list)
     Returns list of CombatResults.
     """

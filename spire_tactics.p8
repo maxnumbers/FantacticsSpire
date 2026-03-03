@@ -294,21 +294,60 @@ function accb(u,stat)
  return 0
 end
 
+-- buff/debuff modifier for stat
+function bufmod(u,st)
+ local m=0
+ for b in all(u.buffs) do
+  if b.st==st then m+=b.val end
+ end
+ for d in all(u.debuffs) do
+  if d.st==st then m-=d.val end
+ end
+ return m
+end
+
+-- compute buff/debuff value from skill
+function bfval(u,tgt,s)
+ local pw=n(s[4])
+ local x=s[7]
+ if x=="s" then return pw end
+ if x=="a" then
+  if pw<=5 then return pw end
+  return max(1,flr(pw*tgt.atk/100))
+ end
+ if x=="d" then
+  return max(1,flr(pw*tgt.def/100))
+ end
+ return pw
+end
+
 -- v2 damage calc: pw is x10 mult
 function calcdmg(u,pw,tgt,pierce)
- local ab=accb(u,"atk")
+ local ab=accb(u,"atk")+bufmod(u,"a")
  local d=flr(n(pw)*u.atk/10)+ab
  if not pierce then
-  d=d-tgt.def
+  d=d-(tgt.def+bufmod(tgt,"d"))
+ end
+ -- mark: +50% damage
+ for db in all(tgt.debuffs) do
+  if db.st=="m" then d=flr(d*1.5) break end
  end
  d+=flr(rnd(3))-1
  return max(1,d)
 end
 
--- combat ai
+-- combat ai: 11 effect handlers
 function doact(u)
- -- tick buffs/debuffs
  tickbd(u)
+ -- stun check
+ for d in all(u.debuffs) do
+  if d.st=="n" then
+   del(u.debuffs,d)
+   cmsg=u.nm.." stunned"
+   cmt=15 return
+  end
+ end
+
  local fr,fo={},{}
  for o in all(py) do
   if o.alive then
@@ -322,7 +361,6 @@ function doact(u)
  end
  if #fo==0 then return end
 
- -- get skills (v2: unit skills)
  local sks
  if u.tm==1 then sks=ugetsk(u)
  else
@@ -334,9 +372,23 @@ function doact(u)
   end
  end
 
- -- heal check
+ -- 1) heal check (h, H + revive)
  for i,s in pairs(sks) do
   if (s[3]=="h" or s[3]=="H") and u.cd[min(i,#u.cd)]==0 then
+   if s[7]=="r" then
+    -- revive: find dead ally
+    local pool=u.tm==1 and py or ens
+    for o in all(pool) do
+     if not o.alive then
+      o.alive=true
+      o.hp=max(1,flr(o.mhp*n(s[4])/100))
+      cmsg=s[1].." revive!"
+      cmt=25 addp(o.x,o.y,11)
+      u.cd[min(i,#u.cd)]=n(s[6])
+      sfx(1) return
+     end
+    end
+   end
    local tgt=nil
    for f in all(fr) do
     if f.hp<f.mhp*0.5 then
@@ -346,9 +398,7 @@ function doact(u)
    if tgt or s[3]=="H" then
     local pw=flr(n(s[4])*u.atk/10)
     if s[3]=="H" then
-     for f in all(fr) do
-      f.hp=min(f.mhp,f.hp+pw)
-     end
+     for f in all(fr) do f.hp=min(f.mhp,f.hp+pw) end
      cmsg=s[1].." +"..pw
     else
      tgt.hp=min(tgt.mhp,tgt.hp+pw)
@@ -357,118 +407,228 @@ function doact(u)
     end
     cmt=25
     u.cd[min(i,#u.cd)]=n(s[6])
-    sfx(1)
-    return
+    sfx(1) return
    end
   end
  end
 
- -- find target (behavior-aware)
+ -- 2) find target (taunt + behavior)
  local tgt,bd=nil,999
  local bf=u.bf or 0
- local pool=fo
- if bf==0 and u.tm==2 and #fo>1 then
-  local mx=0
-  for f in all(fo) do if f.x>mx then mx=f.x end end
-  pool={}
-  for f in all(fo) do if f.x==mx then add(pool,f) end end
+ -- taunt override: target unit with taunt buff
+ for f in all(fo) do
+  for b in all(f.buffs) do
+   if b.st=="t" then
+    tgt=f bd=abs(f.x-u.x)+abs(f.y-u.y)
+   end
+  end
  end
- for f in all(pool) do
-  local d=abs(f.x-u.x)+abs(f.y-u.y)
-  if bf==1 then
-   if not tgt or f.hp<tgt.hp or(f.hp==tgt.hp and d<bd) then
-    tgt=f bd=d
+ if not tgt then
+  local pool=fo
+  if bf==0 and u.tm==2 and #fo>1 then
+   local mx=0
+   for f in all(fo) do if f.x>mx then mx=f.x end end
+   pool={}
+   for f in all(fo) do if f.x==mx then add(pool,f) end end
+  end
+  for f in all(pool) do
+   local d=abs(f.x-u.x)+abs(f.y-u.y)
+   if bf==1 then
+    if not tgt or f.hp<tgt.hp or(f.hp==tgt.hp and d<bd) then
+     tgt=f bd=d
+    end
+   elseif bf==2 then
+    if not tgt or f.x<tgt.x or(f.x==tgt.x and d<bd) then
+     tgt=f bd=d
+    end
+   else
+    if d<bd then tgt=f bd=d end
    end
-  elseif bf==2 then
-   if not tgt or f.x<tgt.x or(f.x==tgt.x and d<bd) then
-    tgt=f bd=d
-   end
-  else
-   if d<bd then tgt=f bd=d end
   end
  end
  if tgt then bd=abs(tgt.x-u.x)+abs(tgt.y-u.y) end
 
- -- buff check
+ -- 3) debuff check (d, D)
  for i,s in pairs(sks) do
-  if (s[3]=="b" or s[3]=="B") and u.cd[min(i,#u.cd)]==0 then
-   if bd<=2 or s[5]=="0" then
-    -- simple DEF buff for now
-    local bval=flr(n(s[4])*u.def/100)
-    if s[7]=="s" then bval=n(s[4]) end
-    if s[7]=="a" then bval=flr(n(s[4])*u.atk/100) end
-    cmsg=s[1]
+  local tp=s[3]
+  if (tp=="d" or tp=="D") and u.cd[min(i,#u.cd)]==0 then
+   local x=s[7]
+   local dur=n(s[8])
+   if tp=="D" then
+    if x=="t" then
+     -- taunt: buff self so enemies target us
+     add(u.buffs,{st="t",val=0,dur=dur})
+    else
+     for f in all(fo) do
+      add(f.debuffs,{st=x,val=bfval(u,f,s),dur=dur})
+     end
+    end
+    cmsg=s[1].."!"
     cmt=20
     u.cd[min(i,#u.cd)]=n(s[6])
-    addp(u.x,u.y,12)
-    sfx(2)
-    return
+    addp(u.x,u.y,14) sfx(2) return
+   elseif bd<=n(s[5]) and tgt then
+    if x=="0" and n(s[4])==0 then
+     -- steal: take a buff from target
+     if #tgt.buffs>0 then
+      local b=tgt.buffs[1]
+      del(tgt.buffs,b)
+      add(u.buffs,b)
+      cmsg="stole buff!"
+     end
+    else
+     add(tgt.debuffs,{st=x,val=bfval(u,tgt,s),dur=dur})
+     cmsg=s[1].."!"
+    end
+    cmt=20
+    u.cd[min(i,#u.cd)]=n(s[6])
+    addp(tgt.x,tgt.y,14) sfx(2) return
    end
   end
  end
 
- -- try attack skills (a, A, p, l)
+ -- 4) buff check (b, B, c)
+ for i,s in pairs(sks) do
+  local tp=s[3]
+  if (tp=="b" or tp=="B" or tp=="c") and u.cd[min(i,#u.cd)]==0 then
+   local x=s[7]
+   local dur=n(s[8])
+   if tp=="c" then
+    add(u.buffs,{st="c",val=n(s[4]),dur=dur})
+    cmsg=s[1].."!"
+   elseif tp=="B" then
+    for f in all(fr) do
+     add(f.buffs,{st=x,val=bfval(u,f,s),dur=dur})
+    end
+    cmsg=s[1].." all!"
+   else
+    local btgt=u
+    if n(s[5])>0 then
+     for f in all(fr) do
+      if f!=u and abs(f.x-u.x)+abs(f.y-u.y)<=n(s[5]) then
+       btgt=f break
+      end
+     end
+    end
+    local val=bfval(u,btgt,s)
+    add(btgt.buffs,{st=x,val=val,dur=dur})
+    cmsg=s[1].." +"..val
+   end
+   cmt=20
+   u.cd[min(i,#u.cd)]=n(s[6])
+   addp(u.x,u.y,12) sfx(2) return
+  end
+ end
+
+ -- 5) attack skills (a, A, p, l)
  for i,s in pairs(sks) do
   local tp=s[3]
   if (tp=="a" or tp=="A" or tp=="p" or tp=="l") and u.cd[min(i,#u.cd)]==0 then
    if tp=="A" then
-    -- aoe: hit all foes
     local dm=calcdmg(u,s[4],fo[1],false)
     for f in all(fo) do
      f.hp-=dm
      if f.hp<=0 then f.alive=false end
      addp(f.x,f.y,8)
     end
-    cmsg=s[1].." -"..dm.." all"
-    cmt=25
-    u.cd[min(i,#u.cd)]=n(s[6])
-    sfx(0)
-    return
-   elseif bd<=n(s[5]) then
-    local dm=calcdmg(u,s[4],tgt,tp=="p")
-    tgt.hp-=dm
     cmsg=s[1].." -"..dm
     cmt=25
     u.cd[min(i,#u.cd)]=n(s[6])
-    if tp=="l" then
+    sfx(0) return
+   elseif bd<=n(s[5]) then
+    local dm=calcdmg(u,s[4],tgt,tp=="p")
+    -- counter check (melee only)
+    local ctr=false
+    if bd<=1 then
+     for b in all(tgt.buffs) do
+      if b.st=="c" then
+       local ref=flr(dm*b.val/100)
+       u.hp-=ref
+       if u.hp<=0 then u.alive=false end
+       del(tgt.buffs,b)
+       ctr=true
+       cmsg="counter! -"..ref
+       break
+      end
+     end
+    end
+    if not ctr then
+     tgt.hp-=dm
+     cmsg=s[1].." -"..dm
+     -- xtra effects: secondary debuff
+     local x=s[7]
+     if x!="0" and n(s[8])>0 then
+      add(tgt.debuffs,{st=x,val=bfval(u,tgt,s),dur=n(s[8])})
+     end
+     if x=="k" then u.hp=min(u.mhp,u.hp+dm) end
+     if x=="n" then add(tgt.debuffs,{st="n",val=0,dur=1}) end
+    end
+    if tp=="l" and not ctr then
      u.hp=min(u.mhp,u.hp+flr(dm/2))
     end
-    if tgt.hp<=0 then
-     tgt.alive=false
-     sfx(3)
-    else
-     sfx(0)
+    cmt=25
+    u.cd[min(i,#u.cd)]=n(s[6])
+    if not ctr then
+     if tgt.hp<=0 then tgt.alive=false sfx(3)
+     else sfx(0) end
     end
-    addp(tgt.x,tgt.y,8)
-    return
+    addp(tgt.x,tgt.y,8) return
    end
   end
  end
 
- -- move or basic attack
+ -- 6) move or basic attack
  if bd>1 then
   if tgt.x>u.x then u.x+=1
   elseif tgt.x<u.x then u.x-=1
   elseif tgt.y>u.y then u.y+=1
   elseif tgt.y<u.y then u.y-=1 end
  else
-  local dm=max(1,u.atk+accb(u,"atk")-tgt.def+flr(rnd(3))-1)
-  tgt.hp-=dm
-  cmsg="atk -"..dm
-  cmt=20
-  if tgt.hp<=0 then
-   tgt.alive=false
-   sfx(3)
-  else
-   sfx(0)
+  local a=u.atk+accb(u,"atk")+bufmod(u,"a")
+  local df=tgt.def+bufmod(tgt,"d")
+  local dm=max(1,a-df+flr(rnd(3))-1)
+  -- counter check
+  local ctr=false
+  for b in all(tgt.buffs) do
+   if b.st=="c" then
+    u.hp-=flr(dm*b.val/100)
+    if u.hp<=0 then u.alive=false end
+    del(tgt.buffs,b)
+    ctr=true cmsg="counter!"
+    break
+   end
   end
+  if not ctr then
+   tgt.hp-=dm cmsg="atk -"..dm
+   if tgt.hp<=0 then tgt.alive=false sfx(3)
+   else sfx(0) end
+  end
+  cmt=20
   addp(tgt.x,tgt.y,8)
  end
 end
 
 -- tick buff/debuff durations
 function tickbd(u)
- -- placeholder: full buff system in W3.1
+ for i=#u.buffs,1,-1 do
+  local b=u.buffs[i]
+  if b.dur>0 then
+   b.dur-=1
+   if b.dur<=0 then del(u.buffs,b) end
+  end
+ end
+ for i=#u.debuffs,1,-1 do
+  local d=u.debuffs[i]
+  -- poison DoT
+  if d.st=="p" then
+   u.hp-=d.val
+   if u.hp<=0 then u.alive=false end
+  end
+  if d.dur>0 then
+   d.dur-=1
+   if d.dur<=0 then del(u.debuffs,d) end
+  end
+ end
 end
 
 function cwin()
@@ -516,7 +676,7 @@ function upcbt()
 
  for _=1,cspd do
   for u in all(au) do
-   u.atb+=u.spd+accb(u,"spd")
+   u.atb+=max(1,u.spd+accb(u,"spd")+bufmod(u,"s"))
    if u.atb>=100 then
     u.atb=-20
     doact(u)
