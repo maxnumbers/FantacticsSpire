@@ -170,6 +170,16 @@ function mke(ei,x,y)
   buffs={},debuffs={}}
 end
 
+function isopen(nx,ny,u)
+ for o in all(py) do
+  if o.alive and o!=u and o.x==nx and o.y==ny then return false end
+ end
+ for o in all(ens) do
+  if o.alive and o!=u and o.x==nx and o.y==ny then return false end
+ end
+ return nx>=0 and nx<=5 and ny>=0 and ny<=3
+end
+
 -- map gen
 function genmap()
  -- v2: 6 rows, StS layout
@@ -272,7 +282,11 @@ function gen_ens()
   local ne=1+flr(rnd(2))
   for i=1,ne do
    local ei=min(1+flr(rnd(5)),10)
-   add(ens,mke(ei,4+flr(rnd(2)),i))
+   local e=mke(ei,4+flr(rnd(2)),min(i+1,3))
+   for o in all(ens) do
+    if o.x==e.x and o.y==e.y then e.y=min(e.y+1,3) end
+   end
+   add(ens,e)
   end
  elseif cnod.tp==2 then
   -- elite: pick from elite pool (11-15)
@@ -280,6 +294,9 @@ function gen_ens()
   for i=1,ne do
    local ei=11+flr(rnd(5))
    local e=mke(min(ei,#_e),4+flr(rnd(2)),i-1)
+   for o in all(ens) do
+    if o.x==e.x and o.y==e.y then e.y=min(e.y+1,3) end
+   end
    add(ens,e)
   end
  else
@@ -291,6 +308,9 @@ function gen_ens()
    e.hp=flr(e.hp*(0.7+fl*0.3))
    e.mhp=e.hp
    e.atk=flr(e.atk*(0.8+fl*0.2))
+   for o in all(ens) do
+    if o.x==e.x and o.y==e.y then e.y=min(e.y+1,3) end
+   end
    add(ens,e)
   end
  end
@@ -602,8 +622,8 @@ function doact(u)
    if tp=="A" then
     local dm=calcdmg(u,s[4],fo[1],false)
     for f in all(fo) do
-     f.hp-=dm
-     if f.hp<=0 then f.alive=false end
+     f.hp-=dm f.flash=4
+     if f.hp<=0 then f.alive=false f.dead_t=8 end
      addp(f.x,f.y,8)
      addfloat(f.x,f.y,"-"..dm,8)
     end
@@ -619,8 +639,8 @@ function doact(u)
      for b in all(tgt.buffs) do
       if b.st=="c" then
        local ref=flr(dm*b.val/100)
-       u.hp-=ref
-       if u.hp<=0 then u.alive=false end
+       u.hp-=ref u.flash=4
+       if u.hp<=0 then u.alive=false u.dead_t=8 end
        del(tgt.buffs,b)
        ctr=true
        cmsg="counter! -"..ref
@@ -629,7 +649,7 @@ function doact(u)
      end
     end
     if not ctr then
-     tgt.hp-=dm
+     tgt.hp-=dm tgt.flash=4
      cmsg=s[1].." -"..dm
      addfloat(tgt.x,tgt.y,"-"..dm,8)
      -- xtra effects: secondary debuff
@@ -646,7 +666,7 @@ function doact(u)
     cmt=25
     u.cd[min(i,#u.cd)]=n(s[6])
     if not ctr then
-     if tgt.hp<=0 then tgt.alive=false sfx(3)
+     if tgt.hp<=0 then tgt.alive=false tgt.dead_t=8 sfx(3)
      else sfx(0) end
     end
     addp(tgt.x,tgt.y,8) return
@@ -656,10 +676,10 @@ function doact(u)
 
  -- 6) move or basic attack
  if bd>1 then
-  if tgt.x>u.x then u.x+=1
-  elseif tgt.x<u.x then u.x-=1
-  elseif tgt.y>u.y then u.y+=1
-  elseif tgt.y<u.y then u.y-=1 end
+  local dx=tgt.x>u.x and 1 or (tgt.x<u.x and -1 or 0)
+  local dy=tgt.y>u.y and 1 or (tgt.y<u.y and -1 or 0)
+  if dx!=0 and isopen(u.x+dx,u.y,u) then u.x+=dx
+  elseif dy!=0 and isopen(u.x,u.y+dy,u) then u.y+=dy end
  else
   local a=u.atk+accb(u,"atk")+bufmod(u,"a")
   local df=tgt.def+bufmod(tgt,"d")
@@ -668,17 +688,17 @@ function doact(u)
   local ctr=false
   for b in all(tgt.buffs) do
    if b.st=="c" then
-    u.hp-=flr(dm*b.val/100)
-    if u.hp<=0 then u.alive=false end
+    u.hp-=flr(dm*b.val/100) u.flash=4
+    if u.hp<=0 then u.alive=false u.dead_t=8 end
     del(tgt.buffs,b)
     ctr=true cmsg="counter!"
     break
    end
   end
   if not ctr then
-   tgt.hp-=dm cmsg="atk -"..dm
+   tgt.hp-=dm tgt.flash=4 cmsg="atk -"..dm
    addfloat(tgt.x,tgt.y,"-"..dm,8)
-   if tgt.hp<=0 then tgt.alive=false sfx(3)
+   if tgt.hp<=0 then tgt.alive=false tgt.dead_t=8 sfx(3)
    else sfx(0) end
   end
   cmt=20
@@ -700,7 +720,7 @@ function tickbd(u)
   -- poison DoT
   if d.st=="p" then
    u.hp-=d.val
-   if u.hp<=0 then u.alive=false end
+   if u.hp<=0 then u.alive=false u.dead_t=8 end
   end
   if d.dur>0 then
    d.dur-=1
@@ -761,8 +781,8 @@ function use_pot(pi,tgt)
   for e in all(ens) do
    if e.alive then
     local d=max(1,pw-n(e.def or 0))
-    e.hp-=d
-    if e.hp<=0 then e.alive=false end
+    e.hp-=d e.flash=4
+    if e.hp<=0 then e.alive=false e.dead_t=8 end
     addp(e.x,e.y,8)
    end
   end
@@ -796,6 +816,8 @@ end
 
 -- update combat
 function upcbt()
+ -- speed toggle
+ if btnp(0) and btnp(1) then cspd=cspd%3+1 end
  if cmt>0 then
   cmt-=1
   return
@@ -1722,7 +1744,7 @@ function dsetup()
  print(lbl.." x"..#ens,80,2,
   tp==4 and 8 or (tp==2 and 9 or 6))
 
- -- grid 6x4
+ -- grid 6x4 with side tinting
  local gx0,gy0=22,14
  local cs=14
  for gx=0,5 do
@@ -1731,10 +1753,11 @@ function dsetup()
    local by=gy0+gy*cs
    local c
    if gx<=2 then c=(gx+gy)%2==0 and 3 or 1
-   else c=(gx+gy)%2==0 and 1 or 2 end
+   else c=(gx+gy)%2==0 and 2 or 1 end
    rectfill(bx,by,bx+cs-2,by+cs-2,c)
   end
  end
+ line(gx0+3*cs-1,gy0,gx0+3*cs-1,gy0+4*cs-2,5)
 
  -- enemy preview on grid
  for e in all(ens) do
@@ -1766,78 +1789,91 @@ function dsetup()
  print(u.nm.." "..jn[u.ji],14,74,7)
  print("hp:"..u.mhp.." at:"..u.atk
   .." df:"..u.def.." sp:"..u.spd,4,83,6)
+ -- skills with readable types
+ local tpnm={a="ATK",A="AOE",h="HEAL",H="HAOE",b="BUFF",B="BFALL",d="DEBF",D="DBALL",p="PIERC",l="DRAIN",c="CNTR"}
+ local sks=ugetsk(u)
+ local sx=4
+ for si=1,min(#sks,3) do
+  local s=sks[si]
+  local tn=tpnm[s[3]] or s[3]
+  print(s[1].." "..tn,sx,91,12)
+  sx+=42
+ end
 
  -- enemy lineup
- print("enemies:",4,93,8)
+ print("enemies:",4,99,8)
  local ex=4
  for e in all(ens) do
-  spr(e.spr,ex,101)
-  print(e.nm,ex+10,101,6)
+  spr(e.spr,ex,107)
+  print(e.nm,ex+10,107,6)
   print("hp:"..e.mhp.." at:"..e.atk,
-   ex+10,108,5)
+   ex+10,114,5)
   ex+=42
  end
 
- print("\x97=place",4,120,5)
+ print("\x97=place  \x96=skills",4,122,5)
 end
 
 function dcombat()
- -- grid
+ -- grid with side tinting
  local gx0,gy0=22,14
  local cs=14
  for gx=0,5 do
   for gy=0,3 do
    local bx=gx0+gx*cs
    local by=gy0+gy*cs
-   rectfill(bx,by,bx+cs-2,by+cs-2,(gx+gy)%2==0 and 1 or 2)
+   local c
+   if gx<=2 then c=(gx+gy)%2==0 and 3 or 1
+   else c=(gx+gy)%2==0 and 2 or 1 end
+   rectfill(bx,by,bx+cs-2,by+cs-2,c)
   end
  end
+ line(gx0+3*cs-1,gy0,gx0+3*cs-1,gy0+4*cs-2,5)
 
- -- party units
+ -- draw unit helper
+ local function dunit(u,hcol)
+  local bx=gx0+u.x*cs+3
+  local by=gy0+u.y*cs+3
+  if u.flash and u.flash>0 then
+   rectfill(bx,by,bx+7,by+7,7)
+   u.flash-=1
+  else
+   spr(u.spr or u.ji,bx,by)
+  end
+  local hw=flr(8*u.hp/u.mhp)
+  rectfill(bx,by+9,bx+8,by+10,5)
+  rectfill(bx,by+9,bx+hw,by+10,hcol)
+  local aw=flr(8*max(0,u.atb)/100)
+  rectfill(bx,by+11,bx+8,by+11,1)
+  rectfill(bx,by+11,bx+aw,by+11,10)
+  local nb=#u.buffs
+  local nd=#u.debuffs
+  if nb>0 then print(nb,bx,by-5,11) end
+  if nd>0 then print(nd,bx+5,by-5,8) end
+ end
+
  for u in all(py) do
-  if u.alive then
+  if u.alive then dunit(u,11) end
+ end
+ for e in all(ens) do
+  if e.alive then dunit(e,8) end
+ end
+
+ -- death poof
+ for u in all(py) do
+  if u.dead_t and u.dead_t>0 then
    local bx=gx0+u.x*cs+3
    local by=gy0+u.y*cs+3
-   spr(u.ji,bx,by)
-   -- hp bar
-   local hw=flr(8*u.hp/u.mhp)
-   rectfill(bx,by+9,bx+8,by+10,5)
-   rectfill(bx,by+9,bx+hw,by+10,11)
-   -- atb
-   local aw=flr(8*u.atb/100)
-   rectfill(bx,by+11,bx+8,by+11,1)
-   rectfill(bx,by+11,bx+aw,by+11,10)
-   -- buff/debuff dots
-   local dx=0
-   for b in all(u.buffs) do
-    pset(bx+dx,by-1,12) dx+=2
-   end
-   for d in all(u.debuffs) do
-    pset(bx+dx,by-1,8) dx+=2
-   end
+   for i=0,7 do pset(bx+rnd(8),by+rnd(8),rnd(1)<.5 and 7 or 6) end
+   u.dead_t-=1
   end
  end
-
- -- enemies
  for e in all(ens) do
-  if e.alive then
+  if e.dead_t and e.dead_t>0 then
    local bx=gx0+e.x*cs+3
    local by=gy0+e.y*cs+3
-   spr(e.spr,bx,by)
-   local hw=flr(8*e.hp/e.mhp)
-   rectfill(bx,by+9,bx+8,by+10,5)
-   rectfill(bx,by+9,bx+hw,by+10,8)
-   local aw=flr(8*e.atb/100)
-   rectfill(bx,by+11,bx+8,by+11,1)
-   rectfill(bx,by+11,bx+aw,by+11,9)
-   -- buff/debuff dots
-   local dx=0
-   for b in all(e.buffs) do
-    pset(bx+dx,by-1,12) dx+=2
-   end
-   for d in all(e.debuffs) do
-    pset(bx+dx,by-1,8) dx+=2
-   end
+   for i=0,7 do pset(bx+rnd(8),by+rnd(8),rnd(1)<.5 and 7 or 6) end
+   e.dead_t-=1
   end
  end
 
@@ -1855,7 +1891,7 @@ function dcombat()
   end
  end
 
- -- hud
+ -- top hud
  rectfill(0,0,127,11,1)
  if cmt>0 then
   print(cmsg,4,2,7)
@@ -1864,22 +1900,54 @@ function dcombat()
  end
  print("g:"..gold,100,2,10)
 
- -- bottom info
- rectfill(0,84,127,92,1)
- local xi=0
- for u in all(py) do
+ -- bottom panel: party + cooldowns
+ rectfill(0,82,127,127,1)
+ line(0,82,127,82,6)
+ for i,u in pairs(py) do
+  local bx=(i-1)*43
+  local by=84
+  spr(u.spr or u.ji,bx+1,by)
+  print(u.nm,bx+10,by,u.alive and 7 or 5)
+  local hw=flr(20*u.hp/u.mhp)
+  rectfill(bx+10,by+7,bx+30,by+9,5)
+  rectfill(bx+10,by+7,bx+10+hw,by+9,u.hp>u.mhp*0.3 and 11 or 8)
   if u.alive then
-   spr(u.ji,xi*28+2,85)
-   print(u.hp,xi*28+12,85,u.hp<u.mhp*0.3 and 8 or 11)
-   xi+=1
+   local sks=ugetsk(u)
+   for si=1,min(#sks,3) do
+    local cd=u.cd[si] or 0
+    local cx=bx+32+(si-1)*4
+    if cd==0 then
+     rectfill(cx,by+7,cx+2,by+9,11)
+    else
+     rectfill(cx,by+7,cx+2,by+9,8)
+    end
+   end
   end
  end
-
- -- potion indicator
+ -- enemy summary row
+ local ei=0
+ for e in all(ens) do
+  if e.alive then
+   local bx=ei*32
+   local by=96
+   spr(e.spr,bx+1,by)
+   print(sub(e.nm,1,4),bx+10,by,7)
+   local hw=flr(16*e.hp/e.mhp)
+   rectfill(bx+10,by+7,bx+26,by+9,5)
+   rectfill(bx+10,by+7,bx+10+hw,by+9,8)
+   ei+=1
+  end
+ end
+ -- action log
+ if cmt>0 then
+  rectfill(0,108,127,116,0)
+  print(cmsg,2,110,7)
+ end
+ -- speed + potion indicator
+ print("x"..cspd,118,122,5)
  if #pots>0 and not potmenu and cmt<=0 then
-  local blink=t%40<25
-  if blink then
-   print("\x96"..#pots,110,86,11)
+  if t%40<25 then
+   print("\x96"..#pots,100,122,11)
   end
  end
 
@@ -1890,7 +1958,6 @@ function dcombat()
   print("potions",4,22,11)
 
   if pottgt==0 then
-   -- potion list
    for i,pi in pairs(pots) do
     local p=_p[pi]
     local c=i==potsel and 10 or 6
@@ -1900,7 +1967,6 @@ function dcombat()
    end
    print("\x96 cancel  \x97 use",8,82,5)
   else
-   -- target select
    print("use ".._p[pots[potsel]][1].." on:",8,30,11)
    for i,u in pairs(py) do
     local c=i==pottgt and 10 or 6
@@ -2037,14 +2103,14 @@ __gfx__
 00600600007770000aaaa000099999000aa99aa000aaaa00000c0000000000000000000000000000000000000000000000000000000000000000000000000000
 060000600707070004444400099999000aaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 6000000600000000004440000000000000aaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-11111111222222220000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00090000000c0000055555000044000000000000033330000000000000999000000200000003c00004444000800000800888800030030030002c200000000000
+0099000000ccc000557555000484000020000020337330000003300009a9900000222000003330004474400088000880898980003303303302c2c20000000000
+09a990000c0c0c005555550004444000220002203333300000383000999999000202020003030300444440000888880088888800033333002c222c0000000000
+09999f0000ccc0005575550000484000022222003373300003330000099990000022200000333000444440000887880089898000033333000222200000000000
+00999000000c000055555500004440000227720033333000333000000999900000020000000300004474400088888880888880003333333002c2200000000000
+0099000000ccc0000555500000440000022222000333300033380000009990000022200000333000044440000888880008888000033333000022200000000000
+090090000c000c000550550004004000002220000303030003330000090090000200020003000300040404000088800008080800003330000200020000000000
+090090000c000c000500500004004000000200000300300000330000090090000200020003000300040040000080800008008000003030000200020000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000

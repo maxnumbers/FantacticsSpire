@@ -893,3 +893,99 @@ class TestBossIntro:
         assert body is not None
         assert re.search(r'init_setup\(\)', body), \
             "upboss doesn't transition to setup"
+
+
+# ============================================================
+# T27: Collision checking in combat movement
+# ============================================================
+
+class TestCollisionChecking:
+    def test_isopen_exists(self, cart):
+        """isopen() function must exist for tile occupancy checking."""
+        body = cart.get_function_body("isopen")
+        assert body is not None, "isopen function not found"
+
+    def test_isopen_checks_bounds(self, cart):
+        """isopen() should check grid boundaries."""
+        body = cart.get_function_body("isopen")
+        assert body is not None
+        assert re.search(r'nx>=0', body), "isopen doesn't check lower x bound"
+        assert re.search(r'ny>=0', body), "isopen doesn't check lower y bound"
+
+    def test_movement_uses_isopen(self, cart):
+        """doact() movement should use isopen for collision checking."""
+        body = cart.get_function_body("doact")
+        assert body is not None
+        assert re.search(r'isopen\(', body), \
+            "doact movement doesn't call isopen()"
+
+    def test_boss_spawn_avoids_overlap(self, cart):
+        """Boss adds should not spawn on the boss tile."""
+        body = cart.get_function_body("gen_ens")
+        assert body is not None
+        assert re.search(r'o\.x==e\.x\s+and\s+o\.y==e\.y', body), \
+            "gen_ens doesn't check spawn overlap for boss adds"
+
+    def test_enemy_spawn_collision_check(self, cart):
+        """Regular/elite enemy spawning should avoid overlap."""
+        body = cart.get_function_body("gen_ens")
+        assert body is not None
+        checks = re.findall(r'o\.x==e\.x', body)
+        assert len(checks) >= 2, \
+            f"Only {len(checks)} spawn collision checks, expected >=2"
+
+
+# ============================================================
+# T28: Combat HUD improvements
+# ============================================================
+
+class TestCombatHUD:
+    def test_cooldown_display_in_combat(self, cart):
+        """dcombat() should show skill cooldowns via ugetsk."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert re.search(r'ugetsk\(', body), \
+            "dcombat doesn't reference ugetsk for cooldown display"
+
+    def test_buff_debuff_counts_shown(self, cart):
+        """dcombat() should show buff/debuff counts above units."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert re.search(r'#u\.buffs', body), \
+            "dcombat doesn't show buff counts"
+        assert re.search(r'#u\.debuffs', body), \
+            "dcombat doesn't show debuff counts"
+
+    def test_setup_readable_skill_types(self, cart):
+        """dsetup() should show readable skill type names."""
+        body = cart.get_function_body("dsetup")
+        assert body is not None
+        for label in ["ATK", "HEAL", "BUFF"]:
+            assert label in body, \
+                f"dsetup doesn't contain readable type label '{label}'"
+
+    def test_grid_side_tinting(self, cart):
+        """dcombat() grid should differentiate player vs enemy side."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert re.search(r'gx<=2', body), \
+            "dcombat grid doesn't differentiate sides"
+
+    def test_hit_flash_support(self, cart):
+        """dcombat() should support hit flash effect."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert re.search(r'\.flash', body), \
+            "dcombat doesn't reference .flash for hit effect"
+
+
+# ============================================================
+# T29: Enemy sprite art
+# ============================================================
+
+class TestEnemySpriteArt:
+    def test_enemy_sprites_populated(self, cart):
+        """All enemy sprites (32-46) should have pixel data."""
+        for i in range(32, 47):
+            assert cart.sprite_has_pixels(i), \
+                f"Enemy sprite {i} is blank (needs pixel art)"
