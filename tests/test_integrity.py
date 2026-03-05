@@ -594,13 +594,11 @@ class TestDraftScreen:
             "Draft doesn't create units via mku()"
 
     def test_draft_transitions_to_map(self, cart):
-        """After 3 picks, draft should generate map."""
+        """After 3 picks, draft should transition to equip screen."""
         body = cart.get_function_body("updraft")
         assert body is not None
-        assert re.search(r'genmap\(\)', body), \
-            "Draft doesn't call genmap() after picking"
-        assert re.search(r'gs\s*=\s*"map"', body), \
-            "Draft doesn't transition to map state"
+        assert re.search(r'init_equip\(\)', body), \
+            "Draft doesn't call init_equip() after picking"
 
 
 # ============================================================
@@ -989,3 +987,165 @@ class TestEnemySpriteArt:
         for i in range(32, 47):
             assert cart.sprite_has_pixels(i), \
                 f"Enemy sprite {i} is blank (needs pixel art)"
+
+
+# ============================================================
+# T30: Player sprite rendering fix
+# ============================================================
+
+class TestPlayerSpriteRendering:
+    def test_no_local_function_dunit(self, cart):
+        """dcombat should NOT use local function dunit (inlined instead)."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert "local function dunit" not in body, \
+            "dcombat still uses local function dunit (should be inlined)"
+
+    def test_player_uses_ji_not_spr(self, cart):
+        """Player units should use spr(u.ji,...) not spr(u.spr or u.ji,...)."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert "spr(u.ji," in body, \
+            "dcombat doesn't use spr(u.ji,...) for player units"
+
+    def test_visual_distinction_borders(self, cart):
+        """dcombat should draw colored borders for visual distinction."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        # Player border color 11 (green), enemy border color 8 (red)
+        assert re.search(r'rect\(bx-1,by-1,bx\+8,by\+8,11\)', body), \
+            "dcombat doesn't draw green border for player units"
+        assert re.search(r'rect\(bx-1,by-1,bx\+8,by\+8,8\)', body), \
+            "dcombat doesn't draw red border for enemy units"
+
+    def test_player_name_tags(self, cart):
+        """dcombat should show player name tags in green."""
+        body = cart.get_function_body("dcombat")
+        assert body is not None
+        assert "sub(u.nm,1,3)" in body, \
+            "dcombat doesn't show player name abbreviations"
+
+
+# ============================================================
+# T31: Confirmation dialogs
+# ============================================================
+
+class TestConfirmationDialogs:
+    def test_dcfm_function_exists(self, cart):
+        """dcfm() confirmation overlay function should exist."""
+        body = cart.get_function_body("dcfm")
+        assert body is not None
+
+    def test_cfm_in_draft(self, cart):
+        """updraft should use cfm for confirmation."""
+        body = cart.get_function_body("updraft")
+        assert body is not None
+        assert "cfm" in body, "updraft doesn't use cfm confirmation"
+
+    def test_cfm_in_shop(self, cart):
+        """upshop should use cfm for confirmation."""
+        body = cart.get_function_body("upshop")
+        assert body is not None
+        assert "cfm" in body, "upshop doesn't use cfm confirmation"
+
+    def test_cfm_in_camp(self, cart):
+        """upcamp should use cfm for confirmation."""
+        body = cart.get_function_body("upcamp")
+        assert body is not None
+        assert "cfm" in body, "upcamp doesn't use cfm confirmation"
+
+    def test_cfm_in_reward(self, cart):
+        """upreward should use cfm for pick_skill and assign_acc."""
+        body = cart.get_function_body("upreward")
+        assert body is not None
+        assert "cfm" in body, "upreward doesn't use cfm confirmation"
+
+
+# ============================================================
+# T32: Starting equipment selection
+# ============================================================
+
+class TestStartingEquipment:
+    def test_init_equip_exists(self, cart):
+        """init_equip() should exist for starting equipment screen."""
+        body = cart.get_function_body("init_equip")
+        assert body is not None
+
+    def test_equip_phases(self, cart):
+        """upequip should handle potion and accessory phases."""
+        body = cart.get_function_body("upequip")
+        assert body is not None
+        assert "eq_phase==1" in body, "upequip missing potion phase"
+        assert "eq_phase==2" in body, "upequip missing accessory phase"
+
+    def test_equip_draw(self, cart):
+        """dequip() should exist for drawing equipment screen."""
+        body = cart.get_function_body("dequip")
+        assert body is not None
+
+    def test_equip_in_dispatcher(self, cart):
+        """_update60 and _draw should handle equip state."""
+        update = cart.get_function_body("_update60")
+        draw = cart.get_function_body("_draw")
+        assert update is not None and "equip" in update
+        assert draw is not None and "equip" in draw
+
+
+# ============================================================
+# T33: Skill leveling system
+# ============================================================
+
+class TestSkillLeveling:
+    def test_slv_in_mku(self, cart):
+        """mku() should initialize slv (skill levels) table."""
+        body = cart.get_function_body("mku")
+        assert body is not None
+        assert "slv" in body, "mku doesn't initialize slv field"
+
+    def test_slv_in_calcdmg(self, cart):
+        """calcdmg should accept and apply skill level multiplier."""
+        body = cart.get_function_body("calcdmg")
+        assert body is not None
+        assert "slv" in body, "calcdmg doesn't use skill level parameter"
+
+    def test_skill_up_reward_phase(self, cart):
+        """upreward should have skill_up phase."""
+        body = cart.get_function_body("upreward")
+        assert body is not None
+        assert "skill_up" in body, "upreward missing skill_up phase"
+
+    def test_skill_level_display(self, cart):
+        """dsetup should show skill levels."""
+        body = cart.get_function_body("dsetup")
+        assert body is not None
+        assert "slv" in body or "lv" in body, \
+            "dsetup doesn't display skill levels"
+
+    def test_skill_inheritance_on_advance(self, cart):
+        """advu should preserve kept skill level."""
+        body = cart.get_function_body("advu")
+        assert body is not None
+        assert "slv" in body, "advu doesn't handle skill level inheritance"
+
+
+# ============================================================
+# T34: Campfire training
+# ============================================================
+
+class TestCampfireTraining:
+    def test_train_option_in_camp(self, cart):
+        """upcamp should support 3 options including train."""
+        body = cart.get_function_body("upcamp")
+        assert body is not None
+        assert "train" in body, "upcamp doesn't support train option"
+
+    def test_uptrain_function(self, cart):
+        """uptrain() function should exist."""
+        body = cart.get_function_body("uptrain")
+        assert body is not None
+
+    def test_train_display_in_dcamp(self, cart):
+        """dcamp should show train option and sub-menu."""
+        body = cart.get_function_body("dcamp")
+        assert body is not None
+        assert "train" in body, "dcamp doesn't display train option"

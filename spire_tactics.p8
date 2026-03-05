@@ -49,6 +49,15 @@ function _init()
  rls={}
  fl=1
  mxfl=3
+ cfm=false
+end
+
+function dcfm()
+ if cfm then
+  rectfill(20,58,108,68,0)
+  rect(20,58,108,68,7)
+  print("\x97 confirm  \x96 cancel",24,61,7)
+ end
 end
 
 -- discovery: bit n = class n discovered
@@ -76,21 +85,99 @@ function init_draft()
 end
 
 function updraft()
- if btnp(0) then sel=max(1,sel-1) sfx(2) end
- if btnp(1) then sel=min(#dpool,sel+1) sfx(2) end
- if btnp(5) and sel<=#dpool then
-  local ji=dpool[sel]
-  if not _has(dpick,ji) then
-   add(dpick,ji)
-   add(py,mku(ji))
-   disc(ji)
-   sfx(1)
-   if #dpick>=3 then
-    genmap()
-    gs="map"
+ if btnp(0) then sel=max(1,sel-1) sfx(2) cfm=false end
+ if btnp(1) then sel=min(#dpool,sel+1) sfx(2) cfm=false end
+ if cfm then
+  if btnp(5) then
+   cfm=false
+   local ji=dpool[sel]
+   if not _has(dpick,ji) then
+    add(dpick,ji)
+    add(py,mku(ji))
+    disc(ji)
+    sfx(1)
+    if #dpick>=3 then
+     init_equip()
+    end
+   end
+  elseif btnp(4) then cfm=false sfx(3) end
+ elseif btnp(5) and sel<=#dpool then
+  cfm=true
+ end
+end
+
+-- starting equipment selection
+function init_equip()
+ gs="equip"
+ eq_pots={}
+ for i=1,3 do add(eq_pots,1+flr(rnd(#_p))) end
+ eq_accs={}
+ for i=1,3 do add(eq_accs,1+flr(rnd(#_a))) end
+ eq_phase=1 sel=1 eq_unit=1
+ cfm=false
+end
+
+function upequip()
+ if eq_phase==1 then
+  -- pick a starting potion
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(3,sel+1) sfx(2) end
+  if btnp(5) then
+   add(pots,eq_pots[sel])
+   eq_phase=2 sel=1 sfx(1)
+  end
+ elseif eq_phase==2 then
+  -- pick accessory for each unit
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(3,sel+1) sfx(2) end
+  if btnp(5) then
+   py[eq_unit].acc=eq_accs[sel]
+   eq_unit+=1 sfx(1)
+   -- reroll accessories for next unit
+   eq_accs={}
+   for i=1,3 do add(eq_accs,1+flr(rnd(#_a))) end
+   sel=1
+   if eq_unit>3 then
+    genmap() gs="map"
    end
   end
  end
+end
+
+function dequip()
+ rectfill(4,4,124,124,0)
+ rect(4,4,124,124,6)
+ if eq_phase==1 then
+  print("choose starting potion",10,8,11)
+  for i=1,3 do
+   local p=_p[eq_pots[i]]
+   local y=22+(i-1)*20
+   local c=i==sel and 10 or 6
+   if i==sel then print(">",8,y,10) end
+   print(p[1],16,y,c)
+   print(p[2],16,y+8,5)
+  end
+ else
+  print("equip "..py[eq_unit].nm,10,8,11)
+  print("choose accessory",10,16,6)
+  for i=1,3 do
+   local a=_a[eq_accs[i]]
+   local y=28+(i-1)*20
+   local c=i==sel and 10 or 6
+   if i==sel then print(">",8,y,10) end
+   print(a[1],16,y,c)
+   print(a[2],16,y+8,5)
+  end
+  -- show party so far
+  for i=1,3 do
+   local u=py[i]
+   local y=92+(i-1)*10
+   spr(u.ji,8,y)
+   print(u.nm,18,y,i<eq_unit and 11 or 5)
+   if u.acc then print(_a[u.acc][1],60,y,10) end
+  end
+ end
+ print("\x97 pick",50,118,5)
 end
 
 -- v2 unit: named, with tier + kept skill
@@ -103,6 +190,7 @@ function mku(ji)
   tier=1,base=ji,kept=nil,acc=nil,
   x=0,y=0,atb=0,
   cd={0,0,0},alive=true,tm=1,
+  slv={1,1,1},
   buffs={},debuffs={}}
 end
 
@@ -112,8 +200,9 @@ end
 function advu(u,branch,kidx)
  local j=_j[branch]
  if n(j[7])!=2 then return end
- -- save kept skill
+ -- save kept skill + its level
  local sks=getsk(u.ji)
+ local klv=u.slv[min(kidx,3)]
  if kidx>=1 and kidx<=#sks then
   u.kept=sks[kidx]
  end
@@ -125,6 +214,10 @@ function advu(u,branch,kidx)
  u.def=n(j[4])
  u.spd=n(j[5])
  u.cd={0,0,0,0}
+ -- new skills at lv1, kept skill keeps its level
+ local nsks=getsk(branch)
+ u.slv={1,1,1}
+ if u.kept then u.slv[min(#nsks+1,3)]=klv end
  disc(branch)
 end
 
@@ -415,9 +508,10 @@ function bfval(u,tgt,s)
 end
 
 -- v2 damage calc: pw is x10 mult
-function calcdmg(u,pw,tgt,pierce)
+function calcdmg(u,pw,tgt,pierce,slv)
  local ab=accb(u,"atk")+bufmod(u,"a")
  local d=flr(n(pw)*u.atk/10)+ab
+ if slv and slv>1 then d=flr(d*(1+(slv-1)*0.2)) end
  if not pierce then
   d=d-(tgt.def+bufmod(tgt,"d"))
  end
@@ -489,7 +583,8 @@ function doact(u)
     end
    end
    if tgt or s[3]=="H" then
-    local pw=flr(n(s[4])*u.atk/10)
+    local lm=u.slv and u.slv[min(i,3)] or 1
+    local pw=flr(n(s[4])*u.atk/10*(1+(lm-1)*0.2))
     if s[3]=="H" then
      for f in all(fr) do f.hp=min(f.mhp,f.hp+pw) end
      cmsg=s[1].." +"..pw
@@ -620,7 +715,7 @@ function doact(u)
   local tp=s[3]
   if (tp=="a" or tp=="A" or tp=="p" or tp=="l") and u.cd[min(i,#u.cd)]==0 then
    if tp=="A" then
-    local dm=calcdmg(u,s[4],fo[1],false)
+    local dm=calcdmg(u,s[4],fo[1],false,u.slv and u.slv[min(i,3)])
     for f in all(fo) do
      f.hp-=dm f.flash=4
      if f.hp<=0 then f.alive=false f.dead_t=8 end
@@ -632,7 +727,7 @@ function doact(u)
     u.cd[min(i,#u.cd)]=n(s[6])
     sfx(0) return
    elseif bd<=n(s[5]) then
-    local dm=calcdmg(u,s[4],tgt,tp=="p")
+    local dm=calcdmg(u,s[4],tgt,tp=="p",u.slv and u.slv[min(i,3)])
     -- counter check (melee only)
     local ctr=false
     if bd<=1 then
@@ -915,11 +1010,30 @@ function upreward()
  if cmt>0 then cmt-=1 return end
 
  if not rws then
-  -- normal/boss: just confirm
+  -- transition to skill_up
   if btnp(5) then
-   cnod.dn=true
-   gs="map"
-   sfx(2)
+   rws="skill_up" rwsu=1 sel=1
+   -- find first alive unit
+   while rwsu<=3 and not py[rwsu].alive do rwsu+=1 end
+   if rwsu>3 then
+    cnod.dn=true gs="map" sfx(2)
+   else sfx(2) end
+  end
+ elseif rws=="skill_up" then
+  local u=py[rwsu]
+  local sks=ugetsk(u)
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(#sks,sel+1) sfx(2) end
+  if btnp(5) then
+   u.slv[min(sel,3)]+=1
+   sfx(1)
+   -- next alive unit
+   rwsu+=1
+   while rwsu<=3 and not py[rwsu].alive do rwsu+=1 end
+   sel=1
+   if rwsu>3 then
+    cnod.dn=true gs="map" sfx(2)
+   end
   end
  elseif rws=="elite_pick" then
   -- choose: 1=advance 2=accessory
@@ -983,13 +1097,16 @@ function upreward()
  elseif rws=="pick_skill" then
   -- pick skill to keep from old class
   local sks=getsk(py[rwunit].ji)
-  if btnp(2) then sel=max(1,sel-1) sfx(2) end
-  if btnp(3) then sel=min(#sks,sel+1) sfx(2) end
-  if btnp(5) then
-   advu(py[rwunit],rwbr,sel)
-   rws=nil
-   sfx(5)
-  end
+  if btnp(2) then sel=max(1,sel-1) sfx(2) cfm=false end
+  if btnp(3) then sel=min(#sks,sel+1) sfx(2) cfm=false end
+  if cfm then
+   if btnp(5) then
+    cfm=false
+    advu(py[rwunit],rwbr,sel)
+    rws=nil
+    sfx(5)
+   elseif btnp(4) then cfm=false sfx(3) end
+  elseif btnp(5) then cfm=true end
  elseif rws=="pick_acc" then
   -- pick 1 of 2 accessories
   if btnp(0) then sel=max(1,sel-1) sfx(2) end
@@ -1008,13 +1125,16 @@ function upreward()
   end
  elseif rws=="assign_acc" then
   -- assign accessory to a unit
-  if btnp(2) then sel=max(1,sel-1) sfx(2) end
-  if btnp(3) then sel=min(#rwunits,sel+1) sfx(2) end
-  if btnp(5) then
-   py[rwunits[sel]].acc=rwacc_chosen
-   rws=nil
-   sfx(5)
-  end
+  if btnp(2) then sel=max(1,sel-1) sfx(2) cfm=false end
+  if btnp(3) then sel=min(#rwunits,sel+1) sfx(2) cfm=false end
+  if cfm then
+   if btnp(5) then
+    cfm=false
+    py[rwunits[sel]].acc=rwacc_chosen
+    rws=nil
+    sfx(5)
+   elseif btnp(4) then cfm=false sfx(3) end
+  elseif btnp(5) then cfm=true end
  end
 
  -- when reward flow done, confirm exits
@@ -1042,6 +1162,8 @@ function _update60()
   end
  elseif gs=="draft" then
   updraft()
+ elseif gs=="equip" then
+  upequip()
  elseif gs=="map" then
   upmap()
  elseif gs=="setup" then
@@ -1095,24 +1217,34 @@ function upmap()
 end
 
 function upset()
- if btnp(0) then cur.x=max(0,cur.x-1) end
- if btnp(1) then cur.x=min(2,cur.x+1) end
- if btnp(2) then cur.y=max(0,cur.y-1) end
- if btnp(3) then cur.y=min(3,cur.y+1) end
+ if btnp(0) then cur.x=max(0,cur.x-1) cfm=false end
+ if btnp(1) then cur.x=min(2,cur.x+1) cfm=false end
+ if btnp(2) then cur.y=max(0,cur.y-1) cfm=false end
+ if btnp(3) then cur.y=min(3,cur.y+1) cfm=false end
  if btnp(4) then init_skview("setup") return end
 
- if btnp(5) then
+ if cfm then
+  if btnp(5) then
+   cfm=false
+   py[selu].x=cur.x
+   py[selu].y=cur.y
+   selu+=1
+   sfx(2)
+   if selu>3 then init_combat() end
+  elseif btnp(4) then cfm=false sfx(3) end
+ elseif btnp(5) then
   local occ=false
   for i=1,selu-1 do
    if py[i].x==cur.x and py[i].y==cur.y then occ=true end
   end
   if not occ then
-   py[selu].x=cur.x
-   py[selu].y=cur.y
-   selu+=1
-   sfx(2)
-   if selu>3 then
-    init_combat()
+   if selu==3 then
+    cfm=true
+   else
+    py[selu].x=cur.x
+    py[selu].y=cur.y
+    selu+=1
+    sfx(2)
    end
   else
    sfx(3)
@@ -1120,35 +1252,52 @@ function upset()
  end
 end
 
-function upcamp()
- if campsub then
-  -- reforge sub-menu
-  upforge()
+function uptrain()
+ if trnu>3 then
+  cnod.dn=true cmt=30
+  gs="reward" rws=nil rwdr=nil
+  campsub=false cmsg="training done!" sfx(1)
   return
  end
- if btnp(4) then init_skview("camp") return end
+ local u=py[trnu]
+ local sks=ugetsk(u)
  if btnp(2) then sel=max(1,sel-1) sfx(2) end
- if btnp(3) then sel=min(2,sel+1) sfx(2) end
+ if btnp(3) then sel=min(#sks,sel+1) sfx(2) end
  if btnp(5) then
-  if sel==1 then
-   for u in all(py) do
-    u.hp=u.mhp
-   end
-   cnod.dn=true
-   cmt=30
-   gs="reward"
-   rws=nil rwdr=nil
-   cmsg="party healed!"
-   sfx(1)
-  else
-   -- reforge: swap accessories
-   campsub=true
-   frgfrom=0
-   frgto=0
-   sel=1
-   sfx(2)
-  end
+  u.slv[min(sel,3)]+=1
+  trnu+=1 sel=1 sfx(1)
  end
+ if btnp(4) then
+  campsub=false sel=3 sfx(3)
+ end
+end
+
+function upcamp()
+ if campsub=="train" then
+  uptrain() return
+ elseif campsub then
+  upforge() return
+ end
+ if btnp(4) then init_skview("camp") return end
+ if btnp(2) then sel=max(1,sel-1) sfx(2) cfm=false end
+ if btnp(3) then sel=min(3,sel+1) sfx(2) cfm=false end
+ if cfm then
+  if btnp(5) then
+   cfm=false
+   if sel==1 then
+    for u in all(py) do u.hp=u.mhp end
+    cnod.dn=true cmt=30
+    gs="reward" rws=nil rwdr=nil
+    cmsg="party healed!" sfx(1)
+   elseif sel==2 then
+    campsub=true frgfrom=0 frgto=0
+    sel=1 sfx(2)
+   elseif sel==3 then
+    campsub="train" trnu=1 sel=1
+    sfx(2)
+   end
+  elseif btnp(4) then cfm=false sfx(3) end
+ elseif btnp(5) then cfm=true end
 end
 
 function upforge()
@@ -1170,24 +1319,23 @@ function upforge()
   -- pick target unit
   if btnp(2) then sel=max(1,sel-1) sfx(2) end
   if btnp(3) then sel=min(3,sel+1) sfx(2) end
-  if btnp(5) and sel!=frgfrom then
-   -- swap accessories
-   local a1=py[frgfrom].acc
-   local a2=py[sel].acc
-   py[frgfrom].acc=a2
-   py[sel].acc=a1
-   cnod.dn=true
-   cmt=30
-   gs="reward"
-   rws=nil rwdr=nil
-   campsub=false
-   cmsg="accessories swapped!"
-   sfx(1)
+  if cfm then
+   if btnp(5) then
+    cfm=false
+    local a1=py[frgfrom].acc
+    local a2=py[sel].acc
+    py[frgfrom].acc=a2
+    py[sel].acc=a1
+    cnod.dn=true cmt=30
+    gs="reward" rws=nil rwdr=nil
+    campsub=false
+    cmsg="accessories swapped!" sfx(1)
+   elseif btnp(4) then cfm=false sfx(3) end
+  elseif btnp(5) and sel!=frgfrom then
+   cfm=true
   end
-  if btnp(4) then
-   frgfrom=0
-   sel=1
-   sfx(3)
+  if not cfm and btnp(4) then
+   frgfrom=0 sel=1 sfx(3)
   end
  end
 end
@@ -1217,45 +1365,31 @@ function init_shop()
 end
 
 function upshop()
- if btnp(2) then sel=max(1,sel-1) sfx(2) end
- if btnp(3) then sel=min(#shitm+1,sel+1) sfx(2) end
- if btnp(5) then
-  if sel>#shitm then
-   -- leave shop
-   cnod.dn=true
-   gs="map"
-   sfx(2)
-   return
-  end
-  local it=shitm[sel]
-  if gold>=it.cost then
-   gold-=it.cost
-   if it.tp=="pot" then
-    if #pots<3 then
-     add(pots,it.id)
-     deli(shitm,sel)
-     sfx(1)
-    else sfx(3) end
-   elseif it.tp=="acc" then
-    -- assign to unit flow
-    shacc=it.id
-    shsel=sel
-    gs="shasgn"
-    sel=1
-    sfx(2)
-   elseif it.tp=="heal" then
-    for u in all(py) do
-     u.hp=u.mhp
-    end
-    deli(shitm,sel)
-    sfx(1)
+ if btnp(2) then sel=max(1,sel-1) sfx(2) cfm=false end
+ if btnp(3) then sel=min(#shitm+1,sel+1) sfx(2) cfm=false end
+ if cfm then
+  if btnp(5) then
+   cfm=false
+   if sel>#shitm then
+    cnod.dn=true gs="map" sfx(2) return
    end
-  else sfx(3) end
- end
- if btnp(4) then
-  cnod.dn=true
-  gs="map"
-  sfx(2)
+   local it=shitm[sel]
+   if gold>=it.cost then
+    gold-=it.cost
+    if it.tp=="pot" then
+     if #pots<3 then add(pots,it.id) deli(shitm,sel) sfx(1)
+     else sfx(3) end
+    elseif it.tp=="acc" then
+     shacc=it.id shsel=sel gs="shasgn" sel=1 sfx(2)
+    elseif it.tp=="heal" then
+     for u in all(py) do u.hp=u.mhp end
+     deli(shitm,sel) sfx(1)
+    end
+   else sfx(3) end
+  elseif btnp(4) then cfm=false sfx(3) end
+ elseif btnp(5) then cfm=true
+ elseif btnp(4) then
+  cnod.dn=true gs="map" sfx(2)
  end
 end
 
@@ -1397,7 +1531,8 @@ function dskview()
     show=false
    end
    if show then
-    print(s[1],8,y,11)
+    local lv=u.slv and u.slv[min(i,3)] or 1
+    print(s[1].." lv"..lv,8,y,11)
     local tp=s[3]
     local tpnm={a="atk",["A"]="aoe",
      h="heal",["H"]="aoeh",b="buff",
@@ -1424,6 +1559,7 @@ function _draw()
  cls(0)
  if gs=="title" then dtitle()
  elseif gs=="draft" then ddraft()
+ elseif gs=="equip" then dequip()
  elseif gs=="map" then dmap()
  elseif gs=="setup" then dsetup()
  elseif gs=="combat" then dcombat()
@@ -1490,7 +1626,20 @@ function dreward()
   if rwdr then
    print("found: ".._p[rwdr][1],8,53,11)
   end
-  print("\x97 continue",36,116,6)
+  print("\x97 level up skills",28,116,6)
+
+ elseif rws=="skill_up" then
+  local u=py[rwsu]
+  print("train "..u.nm,8,53,11)
+  print("pick a skill to level up:",8,63,7)
+  local sks=ugetsk(u)
+  for i,s in pairs(sks) do
+   local c=i==sel and 10 or 6
+   local lv=u.slv[min(i,3)]
+   local y=74+(i-1)*14
+   print(s[1].." lv"..lv,14,y,c)
+   print("pw:"..s[4].." cd:"..s[6],14,y+7,5)
+  end
 
  elseif rws=="elite_pick" then
   print("choose reward:",8,55,7)
@@ -1570,6 +1719,7 @@ function dreward()
    print("acc: "..cur_a,14,y+7,5)
   end
  end
+ dcfm()
 end
 
 function dtitle()
@@ -1654,6 +1804,7 @@ function ddraft()
  if #dpick<3 then
   print("\x8b\x91 browse  \x97 pick",14,120,5)
  end
+ dcfm()
 end
 
 function dmap()
@@ -1796,7 +1947,8 @@ function dsetup()
  for si=1,min(#sks,3) do
   local s=sks[si]
   local tn=tpnm[s[3]] or s[3]
-  print(s[1].." "..tn,sx,91,12)
+  local lv=u.slv and u.slv[min(si,3)] or 1
+  print(s[1].." "..tn.." lv"..lv,sx,91,12)
   sx+=42
  end
 
@@ -1812,6 +1964,7 @@ function dsetup()
  end
 
  print("\x97=place  \x96=skills",4,122,5)
+ dcfm()
 end
 
 function dcombat()
@@ -1830,33 +1983,50 @@ function dcombat()
  end
  line(gx0+3*cs-1,gy0,gx0+3*cs-1,gy0+4*cs-2,5)
 
- -- draw unit helper
- local function dunit(u,hcol)
-  local bx=gx0+u.x*cs+3
-  local by=gy0+u.y*cs+3
-  if u.flash and u.flash>0 then
-   rectfill(bx,by,bx+7,by+7,7)
-   u.flash-=1
-  else
-   spr(u.spr or u.ji,bx,by)
-  end
-  local hw=flr(8*u.hp/u.mhp)
-  rectfill(bx,by+9,bx+8,by+10,5)
-  rectfill(bx,by+9,bx+hw,by+10,hcol)
-  local aw=flr(8*max(0,u.atb)/100)
-  rectfill(bx,by+11,bx+8,by+11,1)
-  rectfill(bx,by+11,bx+aw,by+11,10)
-  local nb=#u.buffs
-  local nd=#u.debuffs
-  if nb>0 then print(nb,bx,by-5,11) end
-  if nd>0 then print(nd,bx+5,by-5,8) end
- end
-
+ -- draw party units (green)
  for u in all(py) do
-  if u.alive then dunit(u,11) end
+  if u.alive then
+   local bx=gx0+u.x*cs+3
+   local by=gy0+u.y*cs+3
+   rect(bx-1,by-1,bx+8,by+8,11)
+   if u.flash and u.flash>0 then
+    rectfill(bx,by,bx+7,by+7,7)
+    u.flash-=1
+   else
+    spr(u.ji,bx,by)
+   end
+   local hw=flr(8*u.hp/u.mhp)
+   rectfill(bx,by+9,bx+8,by+10,5)
+   rectfill(bx,by+9,bx+hw,by+10,11)
+   local aw=flr(8*max(0,u.atb)/100)
+   rectfill(bx,by+11,bx+8,by+11,1)
+   rectfill(bx,by+11,bx+aw,by+11,10)
+   if #u.buffs>0 then print(#u.buffs,bx,by-5,11) end
+   if #u.debuffs>0 then print(#u.debuffs,bx+5,by-5,8) end
+   print(sub(u.nm,1,3),bx,by+13,11)
+  end
  end
+ -- draw enemies (red)
  for e in all(ens) do
-  if e.alive then dunit(e,8) end
+  if e.alive then
+   local bx=gx0+e.x*cs+3
+   local by=gy0+e.y*cs+3
+   rect(bx-1,by-1,bx+8,by+8,8)
+   if e.flash and e.flash>0 then
+    rectfill(bx,by,bx+7,by+7,7)
+    e.flash-=1
+   else
+    spr(e.spr,bx,by)
+   end
+   local hw=flr(8*e.hp/e.mhp)
+   rectfill(bx,by+9,bx+8,by+10,5)
+   rectfill(bx,by+9,bx+hw,by+10,8)
+   local aw=flr(8*max(0,e.atb)/100)
+   rectfill(bx,by+11,bx+8,by+11,1)
+   rectfill(bx,by+11,bx+aw,by+11,10)
+   if #e.buffs>0 then print(#e.buffs,bx,by-5,11) end
+   if #e.debuffs>0 then print(#e.debuffs,bx+5,by-5,8) end
+  end
  end
 
  -- death poof
@@ -1906,7 +2076,7 @@ function dcombat()
  for i,u in pairs(py) do
   local bx=(i-1)*43
   local by=84
-  spr(u.spr or u.ji,bx+1,by)
+  spr(u.ji,bx+1,by)
   print(u.nm,bx+10,by,u.alive and 7 or 5)
   local hw=flr(20*u.hp/u.mhp)
   rectfill(bx+10,by+7,bx+30,by+9,5)
@@ -1995,13 +2165,28 @@ function dcamp()
     ..u.hp.."/"..u.mhp,24,48+i*10,6)
   end
   local opts={"rest (heal all)",
-   "reforge (swap acc)"}
-  for i=1,2 do
+   "reforge (swap acc)","train (level skill)"}
+  for i=1,3 do
    local c=i==sel and 10 or 6
-   print(opts[i],20,82+i*12,c)
-   if i==sel then print(">",14,82+i*12,10) end
+   print(opts[i],20,80+i*10,c)
+   if i==sel then print(">",14,80+i*10,10) end
   end
   print("\x97 to select",36,116,5)
+ elseif campsub=="train" then
+  if trnu<=3 then
+   local u=py[trnu]
+   print("train "..u.nm,34,38,11)
+   local sks=ugetsk(u)
+   for i,s in pairs(sks) do
+    local c=i==sel and 10 or 6
+    local lv=u.slv[min(i,3)]
+    local y=50+(i-1)*16
+    print(s[1].." lv"..lv,18,y,c)
+    print("pw:"..s[4].." cd:"..s[6],18,y+7,5)
+    if i==sel then print(">",12,y,10) end
+   end
+  end
+  print("\x96 cancel  \x97 pick",20,116,5)
  else
   -- reforge sub-menu
   if frgfrom==0 then
@@ -2021,6 +2206,7 @@ function dcamp()
   end
   print("\x96 cancel  \x97 pick",20,116,5)
  end
+ dcfm()
 end
 
 function dshop()
@@ -2068,6 +2254,7 @@ function dshop()
   print(_p[pi][1],40+(i-1)*30,110,5)
  end
  print("\x96 leave  \x97 buy",8,118,5)
+ dcfm()
 end
 
 function dshasgn()
