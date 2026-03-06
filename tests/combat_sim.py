@@ -45,6 +45,8 @@ class Unit:
     behavior: int = 0  # 0=nearest, 1=lowest HP, 2=backrow, etc.
     buffs: list = field(default_factory=list)
     debuffs: list = field(default_factory=list)
+    heal_fatigue: int = 0
+    jp: int = 0
 
     def copy(self):
         u = Unit(
@@ -55,7 +57,9 @@ class Unit:
             cooldowns=dict(self.cooldowns), sprite=self.sprite,
             behavior=self.behavior,
             buffs=[Buff(b.st, b.val, b.dur) for b in self.buffs],
-            debuffs=[Buff(d.st, d.val, d.dur) for d in self.debuffs]
+            debuffs=[Buff(d.st, d.val, d.dur) for d in self.debuffs],
+            heal_fatigue=self.heal_fatigue,
+            jp=self.jp,
         )
         return u
 
@@ -227,9 +231,15 @@ class CombatSim:
                     power = int(sk["power"] * unit.atk / 10)
                     if sk["type"] == "H":
                         for f in friends:
-                            f.hp = min(f.max_hp, f.hp + power)
+                            mult = (100 - min(40, f.heal_fatigue * 10)) / 100
+                            heal = max(1, int(power * mult))
+                            f.hp = min(f.max_hp, f.hp + heal)
+                            f.heal_fatigue += 1
                     elif target:
-                        target.hp = min(target.max_hp, target.hp + power)
+                        mult = (100 - min(40, target.heal_fatigue * 10)) / 100
+                        heal = max(1, int(power * mult))
+                        target.hp = min(target.max_hp, target.hp + heal)
+                        target.heal_fatigue += 1
                     unit.cooldowns[sk_key] = sk["cd"]
                     self.log.append(f"{unit.name} heals for {power}")
                     return
@@ -465,7 +475,8 @@ class CombatSim:
                     continue
                 spd_bonus = self.relic_bonus("spd", u.team)
                 spd_mod = self.bufmod(u, "s")
-                u.atb += max(1, u.spd + spd_bonus + spd_mod)
+                raw_spd = u.spd + spd_bonus + spd_mod
+                u.atb += max(1, self._effective_spd(raw_spd))
                 if u.atb >= 100:
                     u.atb = 0
                     self.do_action(u, all_units)
@@ -478,6 +489,17 @@ class CombatSim:
             party=party, enemies=enemies,
             surviving_party=[u for u in party if u.alive]
         )
+
+    @staticmethod
+    def _effective_spd(spd):
+        """Diminishing returns speed curve used by Lua effspd()."""
+        if spd <= 6:
+            return spd
+        if spd <= 8:
+            return spd
+        if spd <= 12:
+            return 8 + int((spd - 8) * 0.5)
+        return 10 + int((spd - 12) * 0.4)
 
 
 @dataclass
