@@ -49,6 +49,10 @@ function _init()
  rls={}
  fl=1
  mxfl=3
+ fmod=1
+ fmods={"quick foes","thin armor","charged atb"}
+ brelics={}
+ brnames={"valor core","ward sigil","wind emblem"}
  cfm=false
 end
 
@@ -188,6 +192,7 @@ function mku(ji)
   hp=n(j[2]),mhp=n(j[2]),
   atk=n(j[3]),def=n(j[4]),spd=n(j[5]),
   tier=1,base=ji,kept=nil,acc=nil,
+  jp=0,
   x=0,y=0,atb=0,
   cd={0,0,0},alive=true,tm=1,
   slv={1,1,1},
@@ -280,6 +285,7 @@ function genmap()
  --     3=camp 4=boss 5=shop
  nds={}
  cnod=nil
+ fmod=1+flr(rnd(#fmods))
  local br={}
  for row=0,5 do
   br[row]={}
@@ -407,6 +413,16 @@ function gen_ens()
    add(ens,e)
   end
  end
+ -- floor mutator applies to enemies
+ for e in all(ens) do
+  if fmod==1 then
+   e.spd+=1
+  elseif fmod==2 then
+   e.def=max(0,e.def-1)
+  elseif fmod==3 then
+   e.atb=20
+  end
+ end
 end
 
 function init_setup()
@@ -419,6 +435,20 @@ function init_setup()
   u.cd={0,0,0,0}
   u.buffs={}
   u.debuffs={}
+  u.hfat=0
+  -- boss relic passives
+  if _has(brelics,1) then
+   add(u.buffs,{st="a",val=1,dur=0})
+  end
+  if _has(brelics,2) then
+   add(u.buffs,{st="d",val=1,dur=0})
+  end
+  if _has(brelics,3) then
+   add(u.buffs,{st="s",val=1,dur=0})
+  end
+  -- floor mutator applies to party too
+  if fmod==2 then u.def=max(0,u.def-1)
+  elseif fmod==3 then u.atb=20 end
   if u.hp>0 then u.alive=true end
  end
  cur={x=0,y=0}
@@ -478,6 +508,22 @@ function accb(u,stat)
   return n(a[3])
  end
  return 0
+end
+
+-- speed diminishing returns for atb gain
+function effspd(s)
+ if s<=8 then return s end
+ if s<=12 then return 8+flr((s-8)*0.5) end
+ return 10+flr((s-12)*0.4)
+end
+
+function setcd(u,idx,base)
+ local cd=max(0,base)
+ -- mage ring: -1 cooldown but floor at 1
+ if u.acc and _a[u.acc][4]=="m" and cd>0 then
+  cd=max(1,cd-1)
+ end
+ u.cd[min(idx,#u.cd)]=cd
 end
 
 -- buff/debuff modifier for stat
@@ -571,7 +617,7 @@ function doact(u)
       o.hp=max(1,flr(o.mhp*n(s[4])/100))
       cmsg=s[1].." revive!"
       cmt=25 addp(o.x,o.y,11)
-      u.cd[min(i,#u.cd)]=n(s[6])
+      setcd(u,i,n(s[6]))
       sfx(1) return
      end
     end
@@ -586,17 +632,25 @@ function doact(u)
     local lm=u.slv and u.slv[min(i,3)] or 1
     local pw=flr(n(s[4])*u.atk/10*(1+(lm-1)*0.2))
     if s[3]=="H" then
-     for f in all(fr) do f.hp=min(f.mhp,f.hp+pw) end
+     for f in all(fr) do
+      local hf=f.hfat or 0
+      local hv=max(1,flr(pw*(100-min(40,hf*10))/100))
+      f.hp=min(f.mhp,f.hp+hv)
+      f.hfat=hf+1
+     end
      cmsg=s[1].." +"..pw
     for f in all(fr) do addfloat(f.x,f.y,"+"..pw,11) end
     else
-     tgt.hp=min(tgt.mhp,tgt.hp+pw)
-     cmsg=s[1].." +"..pw
-     addfloat(tgt.x,tgt.y,"+"..pw,11)
+     local hf=tgt.hfat or 0
+     local hv=max(1,flr(pw*(100-min(40,hf*10))/100))
+     tgt.hp=min(tgt.mhp,tgt.hp+hv)
+     tgt.hfat=hf+1
+     cmsg=s[1].." +"..hv
+     addfloat(tgt.x,tgt.y,"+"..hv,11)
      addp(tgt.x,tgt.y,11)
     end
     cmt=25
-    u.cd[min(i,#u.cd)]=n(s[6])
+    setcd(u,i,n(s[6]))
     sfx(1) return
    end
   end
@@ -655,7 +709,7 @@ function doact(u)
     end
     cmsg=s[1].."!"
     cmt=20
-    u.cd[min(i,#u.cd)]=n(s[6])
+    setcd(u,i,n(s[6]))
     addp(u.x,u.y,14) sfx(2) return
    elseif bd<=n(s[5]) and tgt then
     if x=="0" and n(s[4])==0 then
@@ -671,7 +725,7 @@ function doact(u)
      cmsg=s[1].."!"
     end
     cmt=20
-    u.cd[min(i,#u.cd)]=n(s[6])
+    setcd(u,i,n(s[6]))
     addp(tgt.x,tgt.y,14) sfx(2) return
    end
   end
@@ -705,7 +759,7 @@ function doact(u)
     cmsg=s[1].." +"..val
    end
    cmt=20
-   u.cd[min(i,#u.cd)]=n(s[6])
+   setcd(u,i,n(s[6]))
    addp(u.x,u.y,12) sfx(2) return
   end
  end
@@ -724,7 +778,7 @@ function doact(u)
     end
     cmsg=s[1].." -"..dm
     cmt=25
-    u.cd[min(i,#u.cd)]=n(s[6])
+    setcd(u,i,n(s[6]))
     sfx(0) return
    elseif bd<=n(s[5]) then
     local dm=calcdmg(u,s[4],tgt,tp=="p",u.slv and u.slv[min(i,3)])
@@ -759,7 +813,7 @@ function doact(u)
      u.hp=min(u.mhp,u.hp+flr(dm/2))
     end
     cmt=25
-    u.cd[min(i,#u.cd)]=n(s[6])
+    setcd(u,i,n(s[6]))
     if not ctr then
      if tgt.hp<=0 then tgt.alive=false tgt.dead_t=8 sfx(3)
      else sfx(0) end
@@ -833,21 +887,34 @@ function cwin()
  end
  if nd==0 then gr+=5 end
  gold+=gr
+ local jp=2
+ if cnod.tp==2 then jp=4 end
+ if cnod.tp==4 then jp=5 end
+ for u in all(py) do
+  if u.alive then u.jp=(u.jp or 0)+jp end
+ end
  gs="reward"
  cmt=45
  rws=nil rwdr=nil
  rwacc={} rwunit=0 rwbr=0 rwski=0
  if cnod.tp==2 then
   -- elite: choose advance or accessory
-  cmsg="elite won! +"..gr.."g"
+  cmsg="elite won! +"..gr.."g +"..jp.."jp"
   rws="elite_pick"
   sel=1
   sfx(5)
  elseif cnod.tp==4 then
-  cmsg="boss defeated! +"..gr.."g"
+  cmsg="boss defeated! +"..gr.."g +"..jp.."jp"
+  rws="boss_relic"
+  rwbr={1+flr(rnd(3)),1+flr(rnd(3)),1+flr(rnd(3))}
+  while rwbr[2]==rwbr[1] do rwbr[2]=1+flr(rnd(3)) end
+  while rwbr[3]==rwbr[1] or rwbr[3]==rwbr[2] do
+   rwbr[3]=1+flr(rnd(3))
+  end
+  sel=1
   sfx(4)
  else
-  cmsg="victory! +"..gr.."g"
+  cmsg="victory! +"..gr.."g +"..jp.."jp"
   -- potion drop chance: 30%
   if rnd(100)<30 and #pots<3 then
    rwdr=1+flr(rnd(#_p))
@@ -863,8 +930,11 @@ function use_pot(pi,tgt)
  local eff=p[2]
  local pw=n(p[3])
  if eff=="h" then
-  tgt.hp=min(tgt.mhp,tgt.hp+pw)
-  cmsg=tgt.nm.." +"..pw.."hp"
+  local hf=tgt.hfat or 0
+  local hv=max(1,flr(pw*(100-min(40,hf*10))/100))
+  tgt.hp=min(tgt.mhp,tgt.hp+hv)
+  tgt.hfat=hf+1
+  cmsg=tgt.nm.." +"..hv.."hp"
  elseif eff=="e" then
   for i=1,#tgt.cd do tgt.cd[i]=0 end
   cmsg=tgt.nm.." cds reset"
@@ -946,7 +1016,8 @@ function upcbt()
 
  for _=1,cspd do
   for u in all(au) do
-   u.atb+=max(1,u.spd+accb(u,"spd")+bufmod(u,"s"))
+   local rs=u.spd+accb(u,"spd")+bufmod(u,"s")
+   u.atb+=max(1,effspd(rs))
    if u.atb>=100 then
     u.atb=-20
     doact(u)
@@ -1008,6 +1079,19 @@ end
 -- reward screen
 function upreward()
  if cmt>0 then cmt-=1 return end
+
+ if rws=="boss_relic" then
+  if btnp(2) then sel=max(1,sel-1) sfx(2) end
+  if btnp(3) then sel=min(3,sel+1) sfx(2) end
+  if btnp(5) then
+   local rid=rwbr[sel]
+   if not _has(brelics,rid) then add(brelics,rid) end
+   rws=nil
+   sel=1
+   sfx(1)
+  end
+  return
+ end
 
  if not rws then
   -- transition to skill_up
@@ -1264,8 +1348,13 @@ function uptrain()
  if btnp(2) then sel=max(1,sel-1) sfx(2) end
  if btnp(3) then sel=min(#sks,sel+1) sfx(2) end
  if btnp(5) then
-  u.slv[min(sel,3)]+=1
-  trnu+=1 sel=1 sfx(1)
+  if (u.jp or 0)>=2 then
+   u.jp-=2
+   u.slv[min(sel,3)]+=1
+   trnu+=1 sel=1 sfx(1)
+  else
+   sfx(3)
+  end
  end
  if btnp(4) then
   campsub=false sel=3 sfx(3)
@@ -1628,6 +1717,20 @@ function dreward()
   end
   print("\x97 level up skills",28,116,6)
 
+ elseif rws=="boss_relic" then
+  print("choose boss relic:",8,53,11)
+  for i=1,3 do
+   local rid=rwbr[i]
+   local y=66+(i-1)*16
+   local c=i==sel and 10 or 6
+   print(brnames[rid],14,y,c)
+   local ds="atk+1"
+   if rid==2 then ds="def+1" end
+   if rid==3 then ds="spd+1" end
+   print(ds,84,y,5)
+   if i==sel then print(">",8,y,10) end
+  end
+
  elseif rws=="skill_up" then
   local u=py[rwsu]
   print("train "..u.nm,8,53,11)
@@ -1811,6 +1914,7 @@ function dmap()
  rectfill(0,0,127,7,1)
  print("floor "..fl.."/"..mxfl,2,1,7)
  print("g:"..gold,80,1,10)
+ print(fmods[fmod],46,1,6)
 
  -- connections
  for nd in all(nds) do
@@ -2175,7 +2279,7 @@ function dcamp()
  elseif campsub=="train" then
   if trnu<=3 then
    local u=py[trnu]
-   print("train "..u.nm,34,38,11)
+   print("train "..u.nm.." jp:"..(u.jp or 0),20,38,11)
    local sks=ugetsk(u)
    for i,s in pairs(sks) do
     local c=i==sel and 10 or 6
@@ -2186,6 +2290,7 @@ function dcamp()
     if i==sel then print(">",12,y,10) end
    end
   end
+  print("cost:2 jp",46,108,5)
   print("\x96 cancel  \x97 pick",20,116,5)
  else
   -- reforge sub-menu

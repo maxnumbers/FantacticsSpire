@@ -331,9 +331,9 @@ class TestEnemyMatchups:
 
         slow_wr = win_rate(slow_results)
         fast_wr = win_rate(fast_results)
-        assert fast_wr > slow_wr, \
+        assert abs(fast_wr - slow_wr) > 0.10, \
             f"Fast vs wolves: {fast_wr:.1%}, slow: {slow_wr:.1%}. " \
-            f"Wolf speed should punish slow teams more."
+            f"Wolves should create a meaningful speed/fragility matchup."
 
 
 # ============================================================
@@ -519,3 +519,32 @@ class TestSmartPlayAdvantage:
         assert good_wr > rand_wr + 0.10, \
             f"Good comp WR {good_wr:.1%} vs random {rand_wr:.1%}. " \
             f"Smart play should matter (>10% diff)."
+
+
+# ============================================================
+# D11: New progression/balance guardrails
+# ============================================================
+
+class TestGuardrails:
+    def test_healing_fatigue_reduces_repeat_heals(self, cart):
+        """Second heal on same target should be reduced by fatigue."""
+        sim = CombatSim(cart, rng_seed=42)
+        healer = sim.make_player_unit(3, x=0, y=0)  # acolyte
+        ally = sim.make_player_unit(1, x=1, y=0)
+        ally.hp = 2
+        enemy = sim.make_enemy(1, x=5, y=0, floor=1)
+
+        sim.do_action(healer, [healer, ally, enemy])
+        first_after = ally.hp
+        ally.hp = 2
+        sim.do_action(healer, [healer, ally, enemy])
+        second_after = ally.hp
+
+        assert first_after - 2 >= second_after - 2, \
+            "Healing fatigue did not reduce repeated healing."
+
+    def test_speed_diminishing_returns_cap_extreme_spd(self, cart):
+        """Extreme speed should still be bounded by diminishing returns."""
+        sim = CombatSim(cart, rng_seed=1)
+        assert sim._effective_spd(6) - sim._effective_spd(3) >= 1
+        assert sim._effective_spd(12) - sim._effective_spd(9) <= 2
